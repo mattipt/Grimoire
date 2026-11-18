@@ -18,6 +18,14 @@ export class AntigravityCommandCatalog extends VaultSkillCommandCatalog {
       providerId: 'antigravity',
       roots: [
         {
+          id: 'workflows',
+          path: '.agents/workflows',
+          includeFlatFiles: true,
+          editable: false,
+          allowContentOnlySkills: true,
+          deriveDescriptionFromBody: true,
+        },
+        {
           id: 'claude',
           path: '.claude/skills',
           editable: false,
