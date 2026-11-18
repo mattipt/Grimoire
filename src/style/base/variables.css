@@ -198,4 +198,6 @@ body {
   --grimoire-error-ground: var(--background-modifier-error);
   --grimoire-error-ground-hover: var(--background-modifier-error-hover);
   --grimoire-compact: var(--color-cyan, var(--interactive-accent));
+  --grimoire-user-bubble-bg: color-mix(in srgb, var(--color-blue, var(--grimoire-accent)) 14%, var(--grimoire-ground));
+  --grimoire-user-bubble-border: color-mix(in srgb, var(--color-blue, var(--grimoire-accent)) 36%, var(--grimoire-line));
 }

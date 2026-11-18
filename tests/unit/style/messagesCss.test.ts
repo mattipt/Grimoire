@@ -50,8 +50,10 @@ describe('messages.css', () => {
     const css = readFileSync('src/style/components/messages.css', 'utf8');
     const scoped = getExactRule(css, '.grimoire-container--chat-window .grimoire-message-user');
 
+    expect(scoped).toContain('background: var(--grimoire-user-bubble-bg)');
+    expect(scoped).toContain('border: 1px solid var(--grimoire-user-bubble-border)');
     expect(scoped).toContain('padding: var(--grimoire-space-10) var(--grimoire-space-12)');
-    expect(scoped).toContain('border-radius: var(--grimoire-radius-2)');
+    expect(scoped).toContain('border-radius: var(--grimoire-radius-3)');
   });
 
   it('keeps wide assistant markdown from expanding the chat pane', () => {
