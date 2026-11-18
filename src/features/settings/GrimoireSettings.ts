@@ -122,6 +122,8 @@ type ObsidianSettingsController = {
 
 const GRIMOIRE_REPOSITORY_URL = 'https://github.com/sandsaber/Grimoire';
 const GRIMOIRE_RELEASES_URL = `${GRIMOIRE_REPOSITORY_URL}/releases`;
+const GRIMOIRE_FORK_REPOSITORY_URL = 'https://github.com/mattipt/Grimoire';
+const GRIMOIRE_FORK_RELEASES_URL = `${GRIMOIRE_FORK_REPOSITORY_URL}/releases`;
 type AppWithHotkeyInternals = App & {
   hotkeyManager?: ObsidianHotkeyManager;
   setting?: ObsidianSettingsController;
@@ -1852,6 +1854,17 @@ export class GrimoireSettingTab extends PluginSettingTab {
       text: this.getHubText('releases'),
     });
     projectLinks.settingEl.addClass('grimoire-settings-about-links');
+    const forkLinks = new Setting(about).setName('Fork (mattipt)');
+    forkLinks.descEl.createEl('a', {
+      attr: { href: GRIMOIRE_FORK_REPOSITORY_URL },
+      text: 'GitHub.com/mattipt/Grimoire',
+    });
+    forkLinks.descEl.appendText(' · ');
+    forkLinks.descEl.createEl('a', {
+      attr: { href: GRIMOIRE_FORK_RELEASES_URL },
+      text: this.getHubText('releases'),
+    });
+    forkLinks.settingEl.addClass('grimoire-settings-fork-links');
     new Setting(about)
       .setName(t('settings.version.name'))
       .setDesc(formatGrimoireVersion(this.plugin.manifest))
