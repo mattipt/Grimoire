@@ -585,7 +585,7 @@ function antigravityPermissionMode(plugin: GrimoirePlugin): string {
   const projected = ProviderSettingsCoordinator
     .getProviderSettingsSnapshot(plugin.settings, 'antigravity')
     .permissionMode;
-  return typeof projected === 'string' && projected ? projected : 'normal';
+  return typeof projected === 'string' && projected && projected !== 'normal' ? projected : 'default';
 }
 
 /** What one turn decides, before it becomes an opaque reference. */

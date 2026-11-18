@@ -92,9 +92,11 @@ export class AntigravityAcpRequests {
       await input.client.setModel({ sessionId: input.sessionId, modelId });
     }
     if (input.signal.aborted) throw new Error('Antigravity ACP configuration cancelled.');
-    // accept-edits auto-approves only edits. Full access uses the native launch
-    // flag, while the session mode is reset to default after leaving Plan.
-    const mode = dynamic.mode === 'plan' ? 'plan' : 'default';
+    // Full access uses the native launch flag with session mode `default`;
+    // default, accept-edits, auto, and plan pass through directly to agy acp.
+    const mode = dynamic.mode === 'full_access' || dynamic.mode === 'normal' || !dynamic.mode
+      ? 'default'
+      : dynamic.mode;
     const option = options.find(candidate => candidate.id === 'mode' && candidate.type === 'select');
     if (option?.type === 'select') {
       const available = option.options.flatMap(entry => 'options' in entry ? entry.options : [entry]);
