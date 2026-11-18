@@ -982,6 +982,10 @@
       "name": "Auto-scroll during streaming",
       "desc": "Automatically scroll to the bottom as Claude streams responses. Disable to stay at the top and read from the beginning."
     },
+    "enableStepFolding": {
+      "name": "Fold intermediate agent steps",
+      "desc": "Group consecutive thinking and tool-call steps into a compact scrolling window of recent steps with a toggle to show all."
+    },
     "deferMathRenderingDuringStreaming": {
       "name": "Defer math rendering during streaming",
       "desc": "Show raw LaTeX while responses stream, then render math once when each text block completes."

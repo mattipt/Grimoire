@@ -1,0 +1,69 @@
+/* Windowed recent-step container and toggle header inside assistant messages */
+button.grimoire-step-toggle-header {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--grimoire-space-6);
+  width: fit-content;
+  min-height: var(--grimoire-hit-s);
+  padding: var(--grimoire-space-2) var(--grimoire-space-8);
+  margin: var(--grimoire-space-4) 0;
+  background: var(--grimoire-plane);
+  border: 1px solid var(--grimoire-line);
+  border-radius: var(--grimoire-radius-1);
+  box-shadow: none;
+  color: var(--grimoire-ink-muted);
+  font-family: var(--grimoire-face);
+  font-size: var(--grimoire-text-s);
+  font-weight: var(--grimoire-weight-medium);
+  line-height: var(--grimoire-leading-tight);
+  cursor: pointer;
+  transition: background var(--grimoire-duration) var(--grimoire-ease),
+    color var(--grimoire-duration) var(--grimoire-ease),
+    border-color var(--grimoire-duration) var(--grimoire-ease);
+}
+
+button.grimoire-step-toggle-header:hover {
+  background: var(--grimoire-hover);
+  border-color: var(--grimoire-line-2);
+  color: var(--grimoire-ink);
+}
+
+button.grimoire-step-toggle-header.is-running .grimoire-step-toggle-label {
+  color: var(--grimoire-ink);
+}
+
+.grimoire-step-toggle-chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--grimoire-icon-s);
+  height: var(--grimoire-icon-s);
+  color: var(--grimoire-ink-faint);
+  transition: transform var(--grimoire-duration) var(--grimoire-ease);
+}
+
+.grimoire-step-toggle-chevron svg {
+  width: var(--grimoire-icon-s);
+  height: var(--grimoire-icon-s);
+}
+
+button.grimoire-step-toggle-header.is-expanded .grimoire-step-toggle-chevron {
+  transform: rotate(90deg);
+}
+
+.grimoire-step-group-container {
+  display: flex;
+  flex-direction: column;
+  gap: var(--grimoire-space-4);
+  padding-inline-start: var(--grimoire-space-10);
+  margin: var(--grimoire-space-4) 0 var(--grimoire-space-8);
+  border-inline-start: 2px solid var(--grimoire-line);
+}
+
+.grimoire-step-group-container.is-compact {
+  max-height: calc(4 * var(--grimoire-tool-row-h) + 5 * var(--grimoire-space-4));
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--grimoire-line-3) transparent;
+}

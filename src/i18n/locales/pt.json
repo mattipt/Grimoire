@@ -982,6 +982,10 @@
       "name": "Rolagem automática durante streaming",
       "desc": "Rolar automaticamente para baixo enquanto o Claude transmite respostas. Desativar para ficar no topo e ler desde o início."
     },
+    "enableStepFolding": {
+      "name": "Recolher etapas intermediárias do agente",
+      "desc": "Agrupa etapas consecutivas de pensamento e chamadas de ferramentas em uma janela compacta rolável das etapas recentes com alternância para mostrar todas."
+    },
     "deferMathRenderingDuringStreaming": {
       "name": "Adiar renderização matemática durante streaming",
       "desc": "Mostrar LaTeX bruto enquanto a resposta é transmitida e renderizar a matemática uma vez quando cada bloco de texto terminar."
