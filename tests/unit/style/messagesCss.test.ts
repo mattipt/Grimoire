@@ -261,4 +261,12 @@ describe('messages.css', () => {
     expect(getRule(css, '.grimoire-message-content :not(pre) > code'))
       .toContain('font-size: var(--grimoire-text-inline-code)');
   });
+
+  it('suppresses Dataview inline-query error boxes inside message content', () => {
+    const dataviewErrorRule = getRule(
+      readMessagesCss(),
+      '.grimoire-message-content .dataview-error,\n.grimoire-message-content .dataview-error-box'
+    );
+    expect(dataviewErrorRule).toContain('display: none');
+  });
 });

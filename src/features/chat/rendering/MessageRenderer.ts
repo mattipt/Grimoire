@@ -1069,9 +1069,10 @@ export class MessageRenderer {
           ? escapeMathDelimitersForStreaming(normalizedMarkdown)
           : normalizedMarkdown
       );
+      const guardedMarkdown = guardDataviewInlineFormulas(renderMarkdown);
       // Normalize embeds before MarkdownRenderer consumes them.
       const processedMarkdown = replaceImageEmbedsWithHtml(
-        renderMarkdown,
+        guardedMarkdown,
         this.app,
         this.plugin.settings.mediaFolder
       );
@@ -1083,6 +1084,7 @@ export class MessageRenderer {
         this.component
       );
 
+      stripDataviewInlineFormulaGuard(el);
       wrapMarkdownTables(el);
 
       // Wrap pre elements and move buttons outside scroll area
@@ -1482,6 +1484,115 @@ export class MessageRenderer {
     }
   }
 
+}
+
+const DATAVIEW_INLINE_FORMULA_GUARD = '\u200B';
+
+/**
+ * Neutralizes inline code spans beginning with `=` or `$=` before Obsidian's
+ * MarkdownRenderer runs so Dataview does not replace spreadsheet formulas with
+ * an inline DQL error box.
+ */
+function guardDataviewInlineFormulas(markdown: string): string {
+  if (!markdown.includes('`') || !markdown.includes('=')) {
+    return markdown;
+  }
+
+  const lines = markdown.split('\n');
+  let activeFence: { marker: '`' | '~'; length: number } | null = null;
+  const outputLines: string[] = [];
+
+  for (const line of lines) {
+    const fenceMatch = /^ {0,3}(`{3,}|~{3,})/.exec(line);
+    if (activeFence) {
+      if (fenceMatch && fenceMatch[1][0] === activeFence.marker && fenceMatch[1].length >= activeFence.length) {
+        activeFence = null;
+      }
+      outputLines.push(line);
+      continue;
+    }
+
+    if (fenceMatch) {
+      activeFence = {
+        marker: fenceMatch[1][0] as '`' | '~',
+        length: fenceMatch[1].length,
+      };
+      outputLines.push(line);
+      continue;
+    }
+
+    let result = '';
+    let index = 0;
+    while (index < line.length) {
+      if (line[index] !== '`') {
+        result += line[index];
+        index += 1;
+        continue;
+      }
+
+      let openLen = 0;
+      while (line[index + openLen] === '`') {
+        openLen += 1;
+      }
+      const delimiter = '`'.repeat(openLen);
+      let searchFrom = index + openLen;
+      let closeIndex = -1;
+
+      while (searchFrom < line.length) {
+        const candidate = line.indexOf(delimiter, searchFrom);
+        if (candidate === -1) {
+          break;
+        }
+        const beforeOk = candidate === 0 || line[candidate - 1] !== '`';
+        const afterOk = line[candidate + openLen] !== '`';
+        if (beforeOk && afterOk) {
+          closeIndex = candidate;
+          break;
+        }
+        searchFrom = candidate + 1;
+      }
+
+      if (closeIndex === -1) {
+        result += delimiter;
+        index += openLen;
+        continue;
+      }
+
+      const inner = line.slice(index + openLen, closeIndex);
+      const guardedInner = /^(\s*)(\$=|=)/.test(inner)
+        ? inner.replace(/^(\s*)(\$=|=)/, `$1${DATAVIEW_INLINE_FORMULA_GUARD}$2`)
+        : inner;
+      result += `${delimiter}${guardedInner}${delimiter}`;
+      index = closeIndex + openLen;
+    }
+
+    outputLines.push(result);
+  }
+
+  return outputLines.join('\n');
+}
+
+function stripDataviewInlineFormulaGuard(root: HTMLElement): void {
+  const visit = (node: Element, inPre: boolean): void => {
+    const tag = node.tagName?.toUpperCase();
+    const insidePre = inPre || tag === 'PRE';
+    if (!insidePre && tag === 'CODE') {
+      const text = node.textContent;
+      if (text && /^\s*\u200B(?:\$=|=)/.test(text)) {
+        const firstChild = (node as { firstChild?: ChildNode | null }).firstChild;
+        if (firstChild && firstChild.nodeType === 3 && firstChild.textContent) {
+          firstChild.textContent = firstChild.textContent.replace(DATAVIEW_INLINE_FORMULA_GUARD, '');
+        } else {
+          node.textContent = text.replace(DATAVIEW_INLINE_FORMULA_GUARD, '');
+        }
+      }
+      return;
+    }
+    for (const child of Array.from(node.children ?? [])) {
+      visit(child, insidePre);
+    }
+  };
+  visit(root, false);
 }
 
 /**

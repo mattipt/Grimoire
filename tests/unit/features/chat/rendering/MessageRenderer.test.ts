@@ -2543,6 +2543,37 @@ describe('MessageRenderer', () => {
 
       expect(MarkdownRenderer.renderMarkdown).toHaveBeenCalled();
     });
+    it('should neutralize inline = and $= formulas during render and restore clean code text', async () => {
+      const { MarkdownRenderer } = await import('obsidian');
+      const { renderer } = createRenderer();
+      const el = createMockEl();
+
+      let capturedMarkdown = '';
+      (MarkdownRenderer.renderMarkdown as jest.Mock).mockImplementationOnce(
+        async (md: string, container: any) => {
+          capturedMarkdown = md;
+          const p = container.createEl('p');
+          p.createEl('code', { text: '\u200B=SUM(A1:A5)' });
+          p.createEl('code', { text: '\u200B$=dv.current()' });
+          const pre = container.createEl('pre');
+          pre.createEl('code', { text: '=SUM(B1:B5)' });
+        }
+      );
+
+      await renderer.renderContent(
+        el,
+        'Use `=SUM(A1:A5)` or `$=dv.current()`.\n\n```excel\n=SUM(B1:B5)\n```',
+      );
+
+      expect(capturedMarkdown).toContain('`\u200B=SUM(A1:A5)`');
+      expect(capturedMarkdown).toContain('`\u200B$=dv.current()`');
+      expect(capturedMarkdown).toContain('```excel\n=SUM(B1:B5)\n```');
+      const paragraph = el.children[0];
+      expect(paragraph.children[0].textContent).toBe('=SUM(A1:A5)');
+      expect(paragraph.children[1].textContent).toBe('$=dv.current()');
+      const preEl = el.children[1].tagName === 'PRE' ? el.children[1] : el.children[1].children[0];
+      expect(preEl.children[0].textContent).toBe('=SUM(B1:B5)');
+    });
   });
 
   // ============================================

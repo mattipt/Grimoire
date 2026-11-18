@@ -453,6 +453,12 @@
   background: var(--grimoire-workbench-surface-raised);
 }
 
+/* Suppress Dataview inline-query errors rendered for literal `=...` snippets */
+.grimoire-message-content .dataview-error,
+.grimoire-message-content .dataview-error-box {
+  display: none;
+}
+
 .grimoire-messages::-webkit-scrollbar {
   width: 6px;
 }
