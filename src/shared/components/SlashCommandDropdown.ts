@@ -269,12 +269,20 @@ export class SlashCommandDropdown {
   }
 
   private buildFilteredItems(searchLower: string, includeBuiltIns: boolean): DropdownItem[] {
+    const matchRank = (item: DropdownItem): number => {
+      const nameLower = item.name.toLowerCase();
+      if (nameLower === searchLower) return 0;
+      if (nameLower.startsWith(searchLower)) return 1;
+      if (nameLower.includes(searchLower)) return 2;
+      return 3;
+    };
+
     return this.buildItemList(includeBuiltIns)
       .filter(item =>
         item.name.toLowerCase().includes(searchLower) ||
         item.description?.toLowerCase().includes(searchLower)
       )
-      .sort((a, b) => a.name.localeCompare(b.name));
+      .sort((a, b) => (searchLower ? matchRank(a) - matchRank(b) : 0) || a.name.localeCompare(b.name));
   }
 
   private async fetchProviderEntries(): Promise<void> {

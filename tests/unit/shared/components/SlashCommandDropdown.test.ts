@@ -682,5 +682,36 @@ describe('SlashCommandDropdown', () => {
 
       d.destroy();
     });
+
+    it('ranks exact, prefix, name-substring, and description matches ahead of alphabetical order', async () => {
+      const entries: ProviderCommandEntry[] = [
+        makeEntry('archive-notes', 'Plan archiving of old notes'),
+        makeEntry('my-plan-helper', 'Helper workflow'),
+        makeEntry('plan-review', 'Review plan'),
+        makeEntry('plan', 'Create a plan'),
+        makeEntry('plan-alpha', 'Alpha plan'),
+      ];
+      const getProviderEntries = jest.fn().mockResolvedValue(entries);
+
+      const d = new SlashCommandDropdown(
+        containerEl, inputEl, callbacks,
+        { providerConfig: CLAUDE_CONFIG, getProviderEntries }
+      );
+
+      inputEl.value = '/plan';
+      inputEl.selectionStart = 5;
+      d.handleInputChange();
+      await new Promise(resolve => window.setTimeout(resolve, 10));
+
+      expect(getRenderedCommandNames(containerEl)).toEqual([
+        'plan',
+        'plan-alpha',
+        'plan-review',
+        'my-plan-helper',
+        'archive-notes',
+      ]);
+
+      d.destroy();
+    });
   });
 });
