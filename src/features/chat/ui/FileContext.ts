@@ -14,6 +14,7 @@ import {
 import { createDetachedEl } from '../../../utils/dom';
 import { buildExternalContextDisplayEntries } from '../../../utils/externalContext';
 import { externalContextScanner } from '../../../utils/externalContextScanner';
+import { isModClickEvent, openFileInMainEditor } from '../../../utils/fileLink';
 import { getVaultPath, normalizePathForVault as normalizePathForVaultUtil } from '../../../utils/path';
 import type { ProviderMcpServerView } from '../tabs/tabSettings';
 import { FileContextState } from './file-context/state/FileContextState';
@@ -344,7 +345,7 @@ export class FileContextManager {
     card.setAttribute('role', 'button');
     card.setAttribute('tabindex', '0');
 
-    const openFile = () => {
+    const openFile = (event?: MouseEvent | KeyboardEvent) => {
       void (async (): Promise<void> => {
         const file = this.app.vault.getAbstractFileByPath(filePath);
         if (!(file instanceof TFile)) {
@@ -352,7 +353,7 @@ export class FileContextManager {
           return;
         }
         try {
-          await this.app.workspace.getLeaf().openFile(file);
+          await openFileInMainEditor(this.app, file, { newTab: isModClickEvent(event) });
         } catch (error) {
           new Notice(t('chat.ui.errors.openFileFailed', {
             error: error instanceof Error ? error.message : String(error),
@@ -361,7 +362,7 @@ export class FileContextManager {
       })();
     };
 
-    card.addEventListener('click', openFile);
+    card.addEventListener('click', (event: MouseEvent) => openFile(event));
     card.addEventListener('keydown', (event: KeyboardEvent) => {
       if (event.key !== 'Enter' && event.key !== ' ') return;
       event.preventDefault();
