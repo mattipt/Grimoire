@@ -205,13 +205,17 @@ describe('messages.css', () => {
     expect(readMessagesCss()).not.toContain('.grimoire-scroll-resume-btn');
   });
 
-  it('can hide the chat scrollbar while streaming is auto-following output', () => {
+  it('can hide the chat scrollbar while preserving gutter width during streaming auto-follow', () => {
     const css = readContainerCss();
 
+    expect(getExactRule(css, '.grimoire-chat-scroll'))
+      .toContain('scrollbar-gutter: stable');
     expect(getExactRule(css, '.grimoire-chat-scroll.grimoire-chat-scroll--quiet'))
-      .toContain('scrollbar-width: none');
+      .toContain('scrollbar-color: transparent transparent');
     expect(getExactRule(css, '.grimoire-chat-scroll.grimoire-chat-scroll--quiet::-webkit-scrollbar'))
-      .toContain('width: 0');
+      .toContain('width: 6px');
+    expect(getExactRule(css, '.grimoire-chat-scroll.grimoire-chat-scroll--quiet::-webkit-scrollbar-thumb'))
+      .toContain('background: transparent');
   });
 
   it('uses a compact shared window gutter for chat content and the composer', () => {
