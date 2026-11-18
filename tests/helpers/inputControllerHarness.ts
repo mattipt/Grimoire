@@ -154,7 +154,14 @@ export function createMockProjectionExecution(
         ...(prepared.isCompact || !prepared.request?.currentNotePath
           ? {}
           : { currentNote: prepared.request.currentNotePath }) };
-      state.addMessage(persisted);
+      const existingIdx = state.messages.findIndex(m => m.id === persisted.id);
+      if (existingIdx >= 0) {
+        const next = [...state.messages];
+        next[existingIdx] = persisted;
+        state.messages = next;
+      } else {
+        state.addMessage(persisted);
+      }
       const assistantMessage = {
         id: `assistant-${++assistantOrdinal}`,
         role: 'assistant',
@@ -263,6 +270,7 @@ export function createMockDeps(overrides: Partial<InputControllerDeps> = {}): In
       }),
       refreshActionButtons: jest.fn(),
       removeMessage: jest.fn(),
+      scrollToBottom: jest.fn(),
       updateLiveUserMessage: jest.fn(),
       renderResponseFooter: jest.fn(),
       updateMessageCompletionTime: jest.fn(),
