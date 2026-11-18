@@ -54,6 +54,7 @@ const KNOWN_SETTINGS_FIELDS = new Set([
   'environmentHash',
   'environmentVariables',
   'modelAliases',
+  'selectedMode',
   'visibleModels',
 ]);
 
@@ -195,6 +196,7 @@ export const antigravitySettingsCodec: ProviderSettingsCodec<AntigravityProvider
       environmentHash: value.environmentHash,
       environmentVariables: value.environmentVariables,
       modelAliases: { ...normalizeAntigravityModelAliases(value.modelAliases) },
+      selectedMode: value.selectedMode.trim(),
       visibleModels: [...normalizeAntigravityVisibleModels(value.visibleModels)],
     };
   },
@@ -331,6 +333,9 @@ function decodeSettings(record: Readonly<Record<string, unknown>>): AntigravityP
       ? record.environmentVariables
       : defaults.environmentVariables,
     modelAliases: normalizeAntigravityModelAliases(record.modelAliases),
+    selectedMode: typeof record.selectedMode === 'string'
+      ? record.selectedMode.trim()
+      : defaults.selectedMode,
     visibleModels: normalizeAntigravityVisibleModels(record.visibleModels),
   };
 }
@@ -345,6 +350,7 @@ function validateKnownSettings(record: Readonly<Record<string, unknown>>): strin
   requireType(record, 'environmentHash', value => typeof value === 'string', issues);
   requireType(record, 'environmentVariables', value => typeof value === 'string', issues);
   requireType(record, 'modelAliases', isRecord, issues);
+  requireType(record, 'selectedMode', value => typeof value === 'string', issues);
   requireType(record, 'visibleModels', Array.isArray, issues);
   if (isRecord(record.cliPathsByHost)
     && Object.values(record.cliPathsByHost).some(value => typeof value !== 'string')) {

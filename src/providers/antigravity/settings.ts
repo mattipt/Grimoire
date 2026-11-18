@@ -1,12 +1,40 @@
 import { getProviderConfig, setProviderConfig } from '../../core/providers/providerConfig';
 import { getProviderEnvironmentVariables } from '../../core/providers/providerEnvironment';
-import type { HostnameCliPaths } from '../../core/types/settings';
+import {
+  type HostnameCliPaths,
+  LEGACY_YOLO_PERMISSION_MODE,
+} from '../../core/types/settings';
 import {
   getHostnameKey,
   getLegacyHostnameKey,
   migrateLegacyHostnameKeyedMap,
 } from '../../utils/env';
 import { normalizeAntigravityModelSelector } from './models';
+
+export const ANTIGRAVITY_WORK_MODES = [
+  'default',
+  'accept-edits',
+  'auto',
+  'plan',
+  'full_access',
+] as const;
+
+export type AntigravityWorkMode = typeof ANTIGRAVITY_WORK_MODES[number];
+
+export function normalizeAntigravityWorkMode(value: unknown): AntigravityWorkMode | undefined {
+  if (typeof value !== 'string') {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  const mapped = trimmed === 'normal'
+    ? 'default'
+    : trimmed === LEGACY_YOLO_PERMISSION_MODE
+      ? 'full_access'
+      : trimmed;
+  return (ANTIGRAVITY_WORK_MODES as readonly string[]).includes(mapped)
+    ? mapped as AntigravityWorkMode
+    : undefined;
+}
 
 export interface AntigravityDiscoveredModel {
   description?: string | null;
@@ -22,6 +50,7 @@ export interface PersistedAntigravityProviderSettings {
   environmentHash: string;
   environmentVariables: string;
   modelAliases: Record<string, string>;
+  selectedMode: string;
   visibleModels: string[];
 }
 
@@ -37,6 +66,7 @@ export const DEFAULT_ANTIGRAVITY_PROVIDER_SETTINGS: Readonly<PersistedAntigravit
   environmentHash: '',
   environmentVariables: '',
   modelAliases: {},
+  selectedMode: '',
   visibleModels: [],
 });
 
@@ -183,6 +213,9 @@ export function getAntigravityProviderSettings(settings: Record<string, unknown>
       ?? getProviderEnvironmentVariables(settings, 'antigravity')
       ?? DEFAULT_ANTIGRAVITY_PROVIDER_SETTINGS.environmentVariables,
     modelAliases: normalizeAntigravityModelAliases(config.modelAliases),
+    selectedMode: typeof config.selectedMode === 'string'
+      ? config.selectedMode.trim()
+      : DEFAULT_ANTIGRAVITY_PROVIDER_SETTINGS.selectedMode,
     visibleModels: normalizeAntigravityVisibleModels(config.visibleModels),
   };
 }
@@ -233,6 +266,9 @@ export function updateAntigravityProviderSettings(
     customModels: nextCustomModels,
     discoveredModels: normalizeAntigravityDiscoveredModels(updates.discoveredModels ?? current.discoveredModels),
     modelAliases: nextModelAliases,
+    selectedMode: typeof updates.selectedMode === 'string'
+      ? updates.selectedMode.trim()
+      : current.selectedMode,
     visibleModels: nextVisibleModels,
   };
 
@@ -245,6 +281,7 @@ export function updateAntigravityProviderSettings(
     environmentHash: next.environmentHash,
     environmentVariables: next.environmentVariables,
     modelAliases: next.modelAliases,
+    selectedMode: next.selectedMode,
     visibleModels: next.visibleModels,
   });
 
