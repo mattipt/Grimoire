@@ -26,11 +26,13 @@ const TOOL_NAME_MAP: Record<string, string> = {
   grep_search: TOOL_GREP,
   list_dir: TOOL_LS,
   list_directory: TOOL_LS,
+  read_file: TOOL_READ,
   read_url_content: TOOL_WEB_FETCH,
   replace_file_content: TOOL_EDIT,
   run_command: TOOL_BASH,
   search_web: TOOL_WEB_SEARCH,
   view_file: TOOL_READ,
+  write_file: TOOL_WRITE,
   write_to_file: TOOL_WRITE,
 };
 
@@ -43,7 +45,9 @@ const TOOL_INPUT_KEY_MAP: Record<string, string> = {
   AbsolutePath: 'file_path',
   CodeContent: 'content',
   CommandLine: 'command',
+  Content: 'content',
   DirectoryPath: 'path',
+  Path: 'file_path',
   Query: 'query',
   SearchDirectory: 'path',
   SearchPath: 'path',

@@ -64,6 +64,7 @@ import {
 } from '../runtime/AntigravityImageAttachments';
 import { AntigravityAcpContentPresenter } from './AntigravityAcpContentPresenter';
 import { AntigravityAcpRequests } from './AntigravityAcpRequests';
+import { createAgyContinuationController } from './AntigravityContinuationController';
 
 /** Combined stdout, stderr, and recovered-transcript ceiling for one run. */
 /**
@@ -120,6 +121,9 @@ export class AntigravityExecution {
     ...(typeof input.TargetFile === 'string' ? { blockedPath: input.TargetFile } : {}),
   }), () => opaqueId('agyix'));
   private readonly presenters = new Set<AcpApprovalPresenter>();
+  private readonly continuation = createAgyContinuationController(
+    () => buildAntigravityRuntimeEnv(this.plugin.settings, ''),
+  );
   private acpBackend: ManagedAcpExecutionBackend | undefined;
   /**
    * The temp files each tab's currently dispatched turn handed to `agy`, by tab.
@@ -255,21 +259,31 @@ export class AntigravityExecution {
           initialize: () => client.initialize(),
           newSession: async request => {
             const session = await client.newSession(request);
+            this.continuation.notePromptStarted(session.sessionId);
             this.acpRequests.rememberSession(wrapped, session);
             return session;
           },
           loadSession: async request => {
+            this.continuation.clearReplay(request.sessionId);
             const session = await client.loadSession(request);
             this.acpRequests.rememberSession(wrapped, { ...session, sessionId: request.sessionId });
             return session;
           },
-          prompt: request => client.prompt(request),
+          prompt: request => {
+            this.continuation.notePromptStarted(request.sessionId);
+            return client.prompt(request);
+          },
           setConfigOption: request => client.setConfigOption(request),
           setMode: request => client.setMode(request),
           setModel: request => client.setModel(request),
           ...(client.listSessions ? { listSessions: request => client.listSessions!(request) } : {}),
           cancel: sessionId => client.cancel(sessionId),
-          onSessionNotification: listener => client.onSessionNotification(listener),
+          onSessionNotification: listener => client.onSessionNotification(notification => {
+            if (!this.continuation.filterNotification(notification)) {
+              return;
+            }
+            listener(notification);
+          }),
           onConnectionLost: listener => client.onConnectionLost(listener),
           close: async () => {
             try { return await client.close(); }
@@ -295,6 +309,7 @@ export class AntigravityExecution {
             digest: createHash('sha256').update(input.output).digest('hex'),
           },
         },
+        noteTurnEnded: input => this.continuation.noteTurnEnded(input),
       },
       reconciler: { reconcile: async query => acpCancellationEvidence(query)
         ?? { kind: 'unknown', effectsPossible: true } },
