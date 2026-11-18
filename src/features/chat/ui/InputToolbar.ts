@@ -2509,6 +2509,10 @@ export class OrchestratorToggle {
     });
   }
 
+  setVisible(visible: boolean): void {
+    this.container.toggleClass('grimoire-hidden', !visible);
+  }
+
   updateDisplay(): void {
     if (!this.buttonEl) return;
 
