@@ -43,6 +43,7 @@ jest.mock('@/utils/imageEmbed', () => ({
 }));
 jest.mock('@/utils/fileLink', () => ({
   mayContainFileLinks: jest.requireActual('@/utils/fileLink').mayContainFileLinks,
+  openFileInMainEditor: jest.requireActual('@/utils/fileLink').openFileInMainEditor,
   processFileLinks: jest.fn(),
   registerFileLinkHandler: jest.fn(),
 }));

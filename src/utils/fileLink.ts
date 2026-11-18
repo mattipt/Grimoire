@@ -5,7 +5,7 @@
  * them clickable to open the file in Obsidian.
  */
 
-import type { App, Component } from 'obsidian';
+import type { App, Component, TFile, WorkspaceLeaf } from 'obsidian';
 
 import { createDetachedEl } from './dom';
 import { getVaultFileByPath } from './obsidianCompat';
@@ -156,22 +156,239 @@ function repairEmptyInternalLink(app: App, link: HTMLAnchorElement): void {
  * Should be called once on the messages container.
  * Handles both our custom .grimoire-file-link and Obsidian's .internal-link.
  */
+function isLeafInRootSplit(app: App, leaf: WorkspaceLeaf | null | undefined): leaf is WorkspaceLeaf {
+  if (!leaf) return false;
+  const rootSplit = app.workspace.rootSplit;
+  if (!rootSplit) return true;
+  if (typeof leaf.getRoot !== 'function') return true;
+  return leaf.getRoot() === rootSplit;
+}
+
+export interface MainEditorOpenOptions {
+  readonly newTab?: boolean;
+}
+
+export function isModClickEvent(event?: MouseEvent | KeyboardEvent | null): boolean {
+  if (!event) return false;
+  return Boolean(event.metaKey || event.ctrlKey || ('button' in event && event.button === 1));
+}
+
+function getLeafFilePath(leaf: WorkspaceLeaf): string | null {
+  if (typeof leaf.getViewState === 'function') {
+    const viewState = leaf.getViewState();
+    const rawState: unknown = viewState?.state;
+    if (rawState && typeof rawState === 'object' && 'file' in rawState) {
+      const stateFile = (rawState as { file?: unknown }).file;
+      if (typeof stateFile === 'string' && stateFile.length > 0) {
+        return stateFile;
+      }
+    }
+  }
+  const view: unknown = (leaf as { view?: unknown }).view;
+  if (view && typeof view === 'object' && 'file' in view) {
+    const file = (view as { file?: { path?: unknown } }).file;
+    if (file && typeof file.path === 'string' && file.path.length > 0) {
+      return file.path;
+    }
+  }
+  return null;
+}
+
+function findOpenLeafForFileInRootSplit(app: App, filePath: string): WorkspaceLeaf | null {
+  const { workspace } = app;
+  const recentMainLeaf = typeof workspace.getMostRecentLeaf === 'function'
+    ? workspace.getMostRecentLeaf(workspace.rootSplit)
+    : null;
+  if (isLeafInRootSplit(app, recentMainLeaf) && getLeafFilePath(recentMainLeaf) === filePath) {
+    return recentMainLeaf;
+  }
+
+  let matched: WorkspaceLeaf | null = null;
+  if (typeof workspace.iterateRootLeaves === 'function') {
+    workspace.iterateRootLeaves((leaf) => {
+      if (!matched && isLeafInRootSplit(app, leaf) && getLeafFilePath(leaf) === filePath) {
+        matched = leaf;
+      }
+    });
+  }
+  return matched;
+}
+
+function resolveTargetFileForLink(app: App, linkTarget: string, sourcePath: string): TFile | null {
+  const linkPath = extractLinkPathFromTarget(linkTarget);
+  if (!linkPath) return null;
+  const cached = app.metadataCache?.getFirstLinkpathDest?.(linkPath, sourcePath);
+  if (cached) return cached;
+  if (!app.vault) return null;
+  const direct = getVaultFileByPath(app, linkPath);
+  if (direct) return direct;
+  if (!linkPath.endsWith('.md')) {
+    return getVaultFileByPath(app, `${linkPath}.md`);
+  }
+  return null;
+}
+
+/**
+ * Resolves a leaf inside the main editor (`workspace.rootSplit`) so opening
+ * files or links from a sidebar pane never replaces or splits inside the sidebar.
+ */
+export function resolveMainEditorLeaf(
+  app: App,
+  options: MainEditorOpenOptions = {},
+): WorkspaceLeaf {
+  const { workspace } = app;
+  const rootSplit = workspace.rootSplit;
+  const recentMainLeaf = typeof workspace.getMostRecentLeaf === 'function'
+    ? workspace.getMostRecentLeaf(rootSplit)
+    : null;
+
+  if (options.newTab) {
+    if (isLeafInRootSplit(app, recentMainLeaf)) {
+      workspace.setActiveLeaf?.(recentMainLeaf, { focus: false });
+      const leaf = workspace.getLeaf('tab');
+      if (isLeafInRootSplit(app, leaf)) {
+        return leaf;
+      }
+      if (rootSplit && typeof workspace.createLeafInParent === 'function') {
+        return workspace.createLeafInParent(rootSplit, -1);
+      }
+      return leaf;
+    }
+
+    if (rootSplit && typeof workspace.createLeafInParent === 'function') {
+      return workspace.createLeafInParent(rootSplit, -1);
+    }
+
+    return workspace.getLeaf('tab');
+  }
+
+  if (isLeafInRootSplit(app, recentMainLeaf)) {
+    workspace.setActiveLeaf?.(recentMainLeaf, { focus: false });
+    return recentMainLeaf;
+  }
+
+  if (rootSplit && typeof workspace.createLeafInParent === 'function') {
+    return workspace.createLeafInParent(rootSplit, -1);
+  }
+
+  return workspace.getLeaf(false);
+}
+
+export async function openFileInMainEditor(
+  app: App,
+  file: TFile,
+  options: MainEditorOpenOptions = {},
+): Promise<void> {
+  if (!options.newTab) {
+    const existingLeaf = findOpenLeafForFileInRootSplit(app, file.path);
+    if (existingLeaf) {
+      app.workspace.setActiveLeaf?.(existingLeaf, { focus: true });
+      await app.workspace.revealLeaf?.(existingLeaf);
+      return;
+    }
+  }
+  const leaf = resolveMainEditorLeaf(app, options);
+  await leaf.openFile(file);
+}
+
+export async function openLinkTextInMainEditor(
+  app: App,
+  linkTarget: string,
+  sourcePath = '',
+  options: MainEditorOpenOptions = {},
+): Promise<void> {
+  const { workspace } = app;
+  const rootSplit = workspace.rootSplit;
+
+  if (!options.newTab) {
+    const targetFile = resolveTargetFileForLink(app, linkTarget, sourcePath);
+    if (targetFile) {
+      const existingLeaf = findOpenLeafForFileInRootSplit(app, targetFile.path);
+      if (existingLeaf) {
+        workspace.setActiveLeaf?.(existingLeaf, { focus: true });
+        await workspace.revealLeaf?.(existingLeaf);
+        if (/[#^]/.test(linkTarget)) {
+          await workspace.openLinkText(linkTarget, sourcePath, false);
+        }
+        return;
+      }
+    }
+  }
+
+  const recentMainLeaf = typeof workspace.getMostRecentLeaf === 'function'
+    ? workspace.getMostRecentLeaf(rootSplit)
+    : null;
+  const newLeafArg: false | 'tab' = options.newTab ? 'tab' : false;
+
+  if (isLeafInRootSplit(app, recentMainLeaf)) {
+    workspace.setActiveLeaf?.(recentMainLeaf, { focus: false });
+    await workspace.openLinkText(linkTarget, sourcePath, newLeafArg);
+    return;
+  }
+
+  if (rootSplit && typeof workspace.createLeafInParent === 'function') {
+    const newMainLeaf = workspace.createLeafInParent(rootSplit, -1);
+    workspace.setActiveLeaf?.(newMainLeaf, { focus: false });
+    await workspace.openLinkText(linkTarget, sourcePath, false);
+    return;
+  }
+
+  await workspace.openLinkText(linkTarget, sourcePath, newLeafArg);
+}
+
+function resolveStandardVaultHref(app: App, anchor: HTMLAnchorElement): string | null {
+  const rawTarget = anchor.dataset?.href || anchor.getAttribute?.('href');
+  if (!rawTarget) return null;
+  if (rawTarget.startsWith('#') || /^[a-z][a-z0-9+.-]*:/i.test(rawTarget)) {
+    return null;
+  }
+  const normalized = rawTarget.replace(/^\.\//, '');
+  const decoded = (() => {
+    try {
+      return decodeURIComponent(normalized);
+    } catch {
+      return normalized;
+    }
+  })();
+  const linkPath = decoded.split('#')[0].split('^')[0];
+  if (!linkPath) return null;
+  if (app.metadataCache?.getFirstLinkpathDest?.(linkPath, '')) {
+    return decoded;
+  }
+  if (getVaultFileByPath(app, linkPath)) {
+    return decoded;
+  }
+  return null;
+}
+
 export function registerFileLinkHandler(
   app: App,
   container: HTMLElement,
   component: Component
 ): void {
   component.registerDomEvent(container, 'click', (event: MouseEvent) => {
-    const target = event.target as HTMLElement;
+    const target = event.target as HTMLElement | null;
+    if (!target) return;
     // Handle both our links and Obsidian's internal links
-    const link = target.closest('.grimoire-file-link, .internal-link') as HTMLAnchorElement;
+    const link = target.closest?.<HTMLAnchorElement>('.grimoire-file-link, .internal-link') ?? null;
 
     if (link) {
       event.preventDefault();
-      const linkTarget = link.dataset.href || link.getAttribute('href');
+      event.stopPropagation?.();
+      const linkTarget = link.dataset?.href || link.getAttribute?.('href');
       if (linkTarget) {
-        void app.workspace.openLinkText(linkTarget, '', 'tab');
+        void openLinkTextInMainEditor(app, linkTarget, '', { newTab: isModClickEvent(event) });
       }
+      return;
+    }
+
+    const anchor = target.closest?.('a') ?? null;
+    if (!anchor) return;
+    const vaultHref = resolveStandardVaultHref(app, anchor);
+    if (vaultHref) {
+      event.preventDefault();
+      event.stopPropagation?.();
+      void openLinkTextInMainEditor(app, vaultHref, '', { newTab: isModClickEvent(event) });
     }
   });
 }
