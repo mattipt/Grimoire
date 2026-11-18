@@ -13,6 +13,7 @@
 @import "./components/history.css";
 @import "./components/title-source.css";
 @import "./components/messages.css";
+@import "./components/step-toggle.css";
 @import "./components/nav-sidebar.css";
 @import "./components/code.css";
 @import "./components/thinking.css";

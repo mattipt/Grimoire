@@ -268,6 +268,7 @@ export interface GrimoireSettings {
    */
   showPanelLabels: boolean;
   enableAutoScroll: boolean;
+  enableStepFolding?: boolean;
   deferMathRenderingDuringStreaming: boolean;
   chatViewPlacement: ChatViewPlacement;
 

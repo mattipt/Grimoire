@@ -390,6 +390,7 @@ const GENERAL_SETTINGS_SEARCH_KEYS: TranslationKey[] = [
   'settings.display',
   'settings.chatViewPlacement.name',
   'settings.enableAutoScroll.name',
+  'settings.enableStepFolding.name',
   'settings.conversations',
   'settings.autoTitle.name',
   'settings.content',
@@ -2010,6 +2011,21 @@ export class GrimoireSettingTab extends PluginSettingTab {
           .onChange(async (value) => {
             this.plugin.settings.enableAutoScroll = value;
             await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(container)
+      .setName(t('settings.enableStepFolding.name'))
+      .setDesc(t('settings.enableStepFolding.desc'))
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.enableStepFolding ?? true)
+          .onChange(async (value) => {
+            this.plugin.settings.enableStepFolding = value;
+            await this.plugin.saveSettings();
+            for (const view of this.plugin.getAllViews?.() ?? []) {
+              view.refreshStepFolding?.();
+            }
           })
       );
 

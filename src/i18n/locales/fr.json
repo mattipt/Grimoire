@@ -982,6 +982,10 @@
       "name": "Défilement automatique pendant le streaming",
       "desc": "Défiler automatiquement vers le bas pendant que Claude diffuse les réponses. Désactiver pour rester en haut et lire depuis le début."
     },
+    "enableStepFolding": {
+      "name": "Regrouper les étapes intermédiaires de l'agent",
+      "desc": "Regroupe les étapes consécutives de réflexion et d'appels d'outils dans une fenêtre compacte défilante des étapes récentes avec un bouton pour tout afficher."
+    },
     "deferMathRenderingDuringStreaming": {
       "name": "Différer le rendu mathématique pendant le streaming",
       "desc": "Afficher le LaTeX brut pendant la diffusion, puis rendre les formules une fois chaque bloc de texte terminé."
