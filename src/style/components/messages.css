@@ -426,9 +426,8 @@
 }
 
 .grimoire-message-content .grimoire-table-scroll > table {
-  width: max-content;
-  min-width: 100%;
-  max-width: none;
+  width: 100%;
+  max-width: 100%;
   table-layout: auto;
   border-collapse: collapse;
   margin: 0;
@@ -439,9 +438,9 @@
   border: 1px solid var(--grimoire-line);
   padding: var(--grimoire-space-6) var(--grimoire-space-8);
   text-align: start;
-  overflow-wrap: normal;
+  overflow-wrap: break-word;
   word-break: normal;
-  white-space: nowrap;
+  white-space: normal;
 }
 
 .grimoire-message-content th {
