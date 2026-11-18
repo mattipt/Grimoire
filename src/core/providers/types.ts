@@ -220,6 +220,16 @@ export interface ProviderReasoningOption extends ProviderUIOption {
   tokens?: number;
 }
 
+/** Individual option for multi-mode permission toggles. */
+export interface ProviderPermissionModeOption {
+  readonly value: string;
+  readonly label: string;
+  readonly detail: string;
+  readonly icon?: string;
+  readonly isPlan?: boolean;
+  readonly isBypass?: boolean;
+}
+
 /** Compact permission-mode toggle descriptor for providers that expose the current toolbar control. */
 export interface ProviderPermissionModeToggleConfig {
   inactiveValue: string;
@@ -231,6 +241,7 @@ export interface ProviderPermissionModeToggleConfig {
   planValue?: string;
   planLabel?: string;
   planDescription?: string;
+  options?: readonly ProviderPermissionModeOption[];
 }
 
 /** Compact service-tier toggle descriptor for providers that expose a fast/standard toolbar control. */

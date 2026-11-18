@@ -1,5 +1,6 @@
 import '@/providers';
 
+import { providerCatalog } from '@/core/providers/ProviderCatalog';
 import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
 import type { Conversation } from '@/core/types';
 import { DEFAULT_CLAUDE_PROVIDER_SETTINGS } from '@/providers/claude/settings';
@@ -616,6 +617,67 @@ describe('ProviderSettingsCoordinator', () => {
         claude: 'default',
         codex: 'fast',
       });
+    });
+
+    it('projects options-based permission modes and falls back to inactiveValue on incompatible switch', () => {
+      const catalog = providerCatalog();
+      const realDeclarations = catalog.declarations.bind(catalog);
+      const declSpy = jest.spyOn(catalog, 'declarations').mockImplementation((providerId: string) => {
+        const base = realDeclarations(providerId);
+        if (providerId !== 'codex') {
+          return base;
+        }
+        return {
+          ...base,
+          chatUI: {
+            ...base.chatUI,
+            permissionMode: {
+              ...base.chatUI.permissionMode,
+              toggle: () => ({
+                inactiveValue: 'default',
+                inactiveLabel: 'Default',
+                activeValue: 'full_access',
+                activeLabel: 'Bypass permissions',
+                planValue: 'plan',
+                planLabel: 'Plan',
+                options: [
+                  { value: 'default', label: 'Default', detail: 'Ask' },
+                  { value: 'accept-edits', label: 'Accept edits', detail: 'Auto-approve edits' },
+                  { value: 'full_access', label: 'Bypass', detail: 'Skip prompts', isBypass: true },
+                ],
+              }),
+            },
+          },
+        };
+      });
+
+      try {
+        const settings: Record<string, unknown> = {
+          settingsProvider: 'codex',
+          permissionMode: 'accept-edits',
+          providerConfigs: {
+            codex: { enabled: true },
+            claude: { enabled: true },
+          },
+          model: DEFAULT_CODEX_PRIMARY_MODEL,
+          effortLevel: 'medium',
+          serviceTier: 'default',
+          thinkingBudget: 'off',
+          savedProviderModel: {},
+          savedProviderEffort: {},
+          savedProviderServiceTier: {},
+          savedProviderThinkingBudget: {},
+          savedProviderPermissionMode: { codex: 'accept-edits' },
+        };
+
+        ProviderSettingsCoordinator.projectProviderState(settings, 'codex');
+        expect(settings.permissionMode).toBe('accept-edits');
+
+        ProviderSettingsCoordinator.projectProviderState(settings, 'claude');
+        expect(settings.permissionMode).toBe('normal');
+      } finally {
+        declSpy.mockRestore();
+      }
     });
   });
 });
