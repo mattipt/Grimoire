@@ -6,14 +6,14 @@ function escapeRegExp(value) {
 }
 
 function isReleaseVersion(value) {
-  return typeof value === 'string' && /^\d+\.\d+\.\d+$/.test(value);
+  return typeof value === 'string' && /^\d+\.\d+\.\d+(?:-fork\.\d+)?$/.test(value);
 }
 
-function extractChangelogSection(changelog, version) {
-  if (!isReleaseVersion(version)) {
-    return null;
-  }
+function baseReleaseVersion(version) {
+  return version.replace(/-fork\.\d+$/, '');
+}
 
+function extractExactChangelogSection(changelog, version) {
   const heading = new RegExp(
     `^## ${escapeRegExp(version)}(?:[ \\t]+-[ \\t]+[^\\r\\n]+)?[ \\t]*$`,
     'm',
@@ -31,6 +31,20 @@ function extractChangelogSection(changelog, version) {
   return changelog.slice(sectionStart, sectionEnd).trim();
 }
 
+function extractChangelogSection(changelog, version) {
+  if (!isReleaseVersion(version)) {
+    return null;
+  }
+
+  const exact = extractExactChangelogSection(changelog, version);
+  if (exact !== null) {
+    return exact;
+  }
+
+  const base = baseReleaseVersion(version);
+  return base !== version ? extractExactChangelogSection(changelog, base) : null;
+}
+
 function validateReleaseMetadata(rootDir) {
   const readJson = (filename) => JSON.parse(fs.readFileSync(path.join(rootDir, filename), 'utf8'));
   const packageJson = readJson('package.json');
@@ -39,10 +53,11 @@ function validateReleaseMetadata(rootDir) {
   const versions = readJson('versions.json');
   const changelog = fs.readFileSync(path.join(rootDir, 'CHANGELOG.md'), 'utf8');
   const version = packageJson.version;
+  const baseVersion = typeof version === 'string' ? baseReleaseVersion(version) : '';
   const errors = [];
 
   if (!isReleaseVersion(version)) {
-    errors.push(`package.json version (${version}) must be a numeric semver such as 1.2.3.`);
+    errors.push(`package.json version (${version}) must be a numeric semver such as 1.2.3 or 1.2.3-fork.1.`);
   }
   if (manifest.version !== version) {
     errors.push(`manifest.json version (${manifest.version}) must match package.json (${version}).`);
@@ -53,8 +68,9 @@ function validateReleaseMetadata(rootDir) {
   if (lockfile.packages?.['']?.version !== version) {
     errors.push(`package-lock.json packages[\"\"].version (${lockfile.packages?.['']?.version ?? 'missing'}) must match package.json (${version}).`);
   }
-  if (versions[version] !== manifest.minAppVersion) {
-    errors.push(`versions.json[${version}] (${versions[version] ?? 'missing'}) must match manifest.json minAppVersion (${manifest.minAppVersion}).`);
+  const minAppVersionEntry = versions[version] ?? (baseVersion !== version ? versions[baseVersion] : undefined);
+  if (minAppVersionEntry !== manifest.minAppVersion) {
+    errors.push(`versions.json[${version}] (${minAppVersionEntry ?? 'missing'}) must match manifest.json minAppVersion (${manifest.minAppVersion}).`);
   }
   if (isReleaseVersion(version) && extractChangelogSection(changelog, version) === null) {
     errors.push(`CHANGELOG.md must contain an exact ## ${version} section.`);

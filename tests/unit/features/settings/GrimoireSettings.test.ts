@@ -500,6 +500,13 @@ describe('GrimoireSettingTab settings hub', () => {
       'https://github.com/sandsaber/Grimoire',
       'https://github.com/sandsaber/Grimoire/releases',
     ]);
+
+    const forkLinks = container.querySelector('.grimoire-settings-fork-links');
+    expect(collectText(forkLinks)).toContain('GitHub.com/mattipt/Grimoire');
+    expect(collectHrefs(forkLinks)).toEqual([
+      'https://github.com/mattipt/Grimoire',
+      'https://github.com/mattipt/Grimoire/releases',
+    ]);
   });
 
   it('uses explicit provider capabilities for every Advanced manager', () => {
