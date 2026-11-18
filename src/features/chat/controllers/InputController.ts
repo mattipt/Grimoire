@@ -446,8 +446,15 @@ export class InputController {
     }
 
     let turnSubmission: TurnSubmission | undefined;
+    let optimisticUserId: string | null = null;
+    let committedToProjection = false;
     const restoreUnsent = () => {
       if (state.streamGeneration !== streamGeneration) return;
+      if (optimisticUserId && !committedToProjection) {
+        state.truncateAt(optimisticUserId);
+        renderer.removeMessage(optimisticUserId);
+        optimisticUserId = null;
+      }
       const cancelled = state.cancelRequested;
       state.isStreaming = false;
       state.cancelRequested = false;
@@ -546,6 +553,15 @@ export class InputController {
       new Notice(error instanceof Error ? error.message : t('chat.ui.errors.initializeAgentFailed'));
       return;
     }
+
+    // Render the user bubble immediately on submit rather than blocking behind
+    // agent startup and `.meta.json` persistence; `ChatSurfaceRenderTarget`
+    // updates this message in place by ID when the coordinator commits it, and
+    // `restoreUnsent()` rolls it back if preparation cancels or fails early.
+    optimisticUserId = userMsg.id;
+    state.addMessage(userMsg);
+    renderer.addMessage(userMsg);
+    renderer.scrollToBottom();
 
     let assistantMsg = this.createAssistantMessage(queryOptions);
 
@@ -654,6 +670,7 @@ export class InputController {
         }),
       });
       await submitted.ticket.started;
+      committedToProjection = true;
       state.hasPendingConversationSave = true;
       fileContextManager?.markCurrentNoteSent();
       userMsg.content = submitted.userMessage.content;
@@ -681,7 +698,7 @@ export class InputController {
     } catch (error) {
       if (error instanceof ChatTurnCancelledError) {
         await projection.settled();
-        if (!findMessage(state.messages, userMsg.id)) {
+        if (!committedToProjection || !findMessage(state.messages, userMsg.id)) {
           restoreUnsent();
           preparationAborted = true;
         } else {

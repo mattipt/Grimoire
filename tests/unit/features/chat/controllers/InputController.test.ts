@@ -19,6 +19,7 @@ import * as os from 'os';
 import * as path from 'path';
 
 import type { ChatMessage } from '@/core/types';
+import { ChatTurnCancelledError } from '@/features/chat/application/ChatExecutionCoordinator';
 import { InputController } from '@/features/chat/controllers/InputController';
 import { ResumeSessionDropdown } from '@/shared/components/ResumeSessionDropdown';
 
@@ -84,19 +85,49 @@ describe('InputController on the projection path', () => {
     expect(deps.getAgentService?.()?.query).not.toHaveBeenCalled();
   });
 
-  it('draws neither message itself, because the projection draws both', async () => {
-    // The question arrives from the projection once the coordinator has made it
-    // durable, and the answer as a turn the target opens. Drawing either here
-    // would draw it twice — and the question before it was recorded, which is
-    // the one thing the barrier exists to stop being possible.
+  it('renders the user message optimistically before startup completes and rolls back on pre-dispatch cancel', async () => {
+    let resolveInit!: (ready: boolean) => void;
+    deps.ensureServiceInitialized = jest.fn(
+      () => new Promise<boolean>((resolve) => { resolveInit = resolve; }),
+    );
     const projection = projectionOf();
     deps.getProjectionExecution = () => projection as never;
     deps.getInputEl().value = 'are tomatoes a fruit?';
     const controller = new InputController(deps);
 
-    await controller.sendMessage();
+    const sendPromise = controller.sendMessage();
+    for (let i = 0; i < 12 && (deps.ensureServiceInitialized as jest.Mock).mock.calls.length === 0; i += 1) {
+      await Promise.resolve();
+    }
 
-    expect(deps.renderer.addMessage).not.toHaveBeenCalled();
+    expect(deps.ensureServiceInitialized).toHaveBeenCalledTimes(1);
+    expect(deps.renderer.addMessage).toHaveBeenCalledTimes(1);
+    expect(deps.renderer.addMessage).toHaveBeenCalledWith(expect.objectContaining({
+      role: 'user',
+      displayContent: 'are tomatoes a fruit?',
+    }));
+    expect((deps.renderer as any).scrollToBottom).toHaveBeenCalledTimes(1);
+
+    resolveInit(true);
+    await sendPromise;
+
+    expect(projection.send).toHaveBeenCalledTimes(1);
+    expect(deps.renderer.addMessage).toHaveBeenCalledTimes(1);
+
+    // Pre-dispatch ChatTurnCancelledError must roll back the optimistic bubble.
+    const cancelDeps = createSendableDeps();
+    const cancelProjection = projectionOf({
+      send: jest.fn().mockRejectedValue(new ChatTurnCancelledError()),
+    });
+    cancelDeps.getProjectionExecution = () => cancelProjection as never;
+    cancelDeps.getInputEl().value = 'cancelled before dispatch';
+    const cancelController = new InputController(cancelDeps);
+
+    await cancelController.sendMessage();
+
+    expect(cancelDeps.state.messages).toHaveLength(0);
+    expect((cancelDeps.renderer as any).removeMessage).toHaveBeenCalledTimes(1);
+    expect(cancelDeps.getInputEl().value).toBe('cancelled before dispatch');
   });
 
   it('takes what the provider composed onto the message it is holding', async () => {
@@ -973,11 +1004,9 @@ describe('InputController - Message Queue', () => {
 
       expect(welcomeEl.style.display).toBe('none');
       expect(fileContextManager.startSession).toHaveBeenCalled();
-      // Two messages in state and none drawn by this controller: on the
-      // projection path the column is the render target's, and the question is
-      // drawn only once the coordinator has made it durable. What that looks
-      // like is proven over a real coordinator, not here.
-      expect(deps.renderer.addMessage).not.toHaveBeenCalled();
+      // The user bubble is drawn optimistically before projection persistence;
+      // the assistant bubble is opened by the projection target.
+      expect(deps.renderer.addMessage).toHaveBeenCalledTimes(1);
       expect(deps.state.messages).toHaveLength(2);
       // Without XML context tags, content equals displayContent (no <query> wrapper)
       expect(deps.state.messages[0].content).toBe('See ![[image.png]]');
@@ -2517,6 +2546,8 @@ describe('InputController - Message Queue', () => {
       expect(deps.streamController.hideThinkingIndicator).toHaveBeenCalled();
       expect(deps.state.isStreaming).toBe(false);
       expect(deps.state.hasPendingConversationSave).toBe(false);
+      expect(deps.state.messages).toHaveLength(0);
+      expect((deps.renderer as any).removeMessage).toHaveBeenCalledTimes(1);
       expect(inputEl.value).toBe('test message');
       expect((deps as any).mockAgentService.query).not.toHaveBeenCalled();
     });
