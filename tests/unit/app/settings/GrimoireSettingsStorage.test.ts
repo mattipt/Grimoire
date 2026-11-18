@@ -2,6 +2,7 @@ import {
   GRIMOIRE_SETTINGS_PATH,
   GrimoireSettingsStorage,
 } from '@/app/settings/GrimoireSettingsStorage';
+import { builtInProviderCatalog } from '@/providers/BuiltInProviderCatalog';
 
 describe('GrimoireSettingsStorage legacy appearance theme cleanup', () => {
   it('does not persist the Claude Code project settings snapshot', async () => {
@@ -102,5 +103,78 @@ describe('GrimoireSettingsStorage legacy appearance theme cleanup', () => {
     expect(JSON.parse(writes[0]?.content ?? '{}')).toMatchObject({
       usageIndicatorsEnabled: true,
     });
+  });
+
+  it('preserves catalog-declared multi-option permission modes and migrates legacy normal/yolo while keeping other providers strict', async () => {
+    const realGet = builtInProviderCatalog.get.bind(builtInProviderCatalog);
+    const getSpy = jest.spyOn(builtInProviderCatalog, 'get').mockImplementation((providerId: string) => {
+      const base = realGet(providerId);
+      if (providerId !== 'codex' || !base) {
+        return base;
+      }
+      return {
+        ...base,
+        declarations: {
+          ...base.declarations,
+          chatUI: {
+            ...base.declarations.chatUI,
+            permissionMode: {
+              ...base.declarations.chatUI.permissionMode,
+              toggle: () => ({
+                inactiveValue: 'default',
+                inactiveLabel: 'Default',
+                activeValue: 'full_access',
+                activeLabel: 'Bypass permissions',
+                planValue: 'plan',
+                planLabel: 'Plan',
+                options: [
+                  { value: 'default', label: 'Default', detail: 'Ask' },
+                  { value: 'accept-edits', label: 'Accept edits', detail: 'Auto-approve edits' },
+                  { value: 'auto', label: 'Auto', detail: 'Smart auto' },
+                  { value: 'plan', label: 'Plan', detail: 'Plan first', isPlan: true },
+                  { value: 'full_access', label: 'Bypass', detail: 'Skip prompts', isBypass: true },
+                ],
+              }),
+            },
+          },
+        },
+      };
+    });
+
+    try {
+      const adapter = {
+        exists: jest.fn().mockResolvedValue(true),
+        read: jest.fn().mockResolvedValue(JSON.stringify({
+          settingsProvider: 'codex',
+          permissionMode: 'accept-edits',
+          providerConfigs: { codex: { enabled: true } },
+          savedProviderPermissionMode: {
+            codex: 'auto',
+            claude: 'accept-edits',
+          },
+        })),
+        rename: jest.fn(),
+        write: jest.fn(),
+      };
+      const storage = new GrimoireSettingsStorage(adapter as never);
+
+      const settings = await storage.load();
+
+      expect(settings.permissionMode).toBe('accept-edits');
+      expect(settings.savedProviderPermissionMode.codex).toBe('auto');
+      expect(settings.savedProviderPermissionMode.claude).toBeUndefined();
+
+      adapter.read.mockResolvedValueOnce(JSON.stringify({
+        settingsProvider: 'codex',
+        permissionMode: 'normal',
+        providerConfigs: { codex: { enabled: true } },
+        savedProviderPermissionMode: { codex: 'yolo' },
+      }));
+      const migrated = await storage.load();
+      expect(migrated.permissionMode).toBe('default');
+      expect(migrated.savedProviderPermissionMode.codex).toBe('full_access');
+    } finally {
+      getSpy.mockRestore();
+    }
   });
 });

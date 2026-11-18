@@ -5,6 +5,7 @@ import type { ProviderId } from '../types/provider';
 import type { ProviderCommandEntry } from './commands/ProviderCommandEntry';
 import type { ProviderCatalogRefreshOutcome } from './ProviderModelCatalogRefreshCache';
 import type {
+  ProviderPermissionModeOption,
   ProviderRuntimeCommandLoaderContext,
   ProviderSubagentLifecycleAdapter,
   ProviderTaskResultInterpreter,
@@ -870,6 +871,7 @@ export interface ProviderPermissionModeToggle {
   readonly planValue?: string;
   readonly planLabel?: string;
   readonly planDescription?: string;
+  readonly options?: readonly ProviderPermissionModeOption[];
 }
 
 export interface ProviderServiceTierPresentation {

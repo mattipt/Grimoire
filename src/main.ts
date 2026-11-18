@@ -59,7 +59,7 @@ import {
   setEnvironmentVariablesForScope,
 } from './core/providers/providerEnvironment';
 import type { ProviderHistoryHydration } from './core/providers/ProviderModule';
-import { ProviderSettingsCoordinator } from './core/providers/ProviderSettingsCoordinator';
+import { getSettingsProviderId, ProviderSettingsCoordinator } from './core/providers/ProviderSettingsCoordinator';
 import { ProviderWorkspaceManager } from './core/providers/ProviderWorkspaceManager';
 import type {
   ProviderId,
@@ -809,10 +809,14 @@ export default class GrimoirePlugin extends Plugin {
       scope: 'plugin',
     });
 
-    // Plan mode is ephemeral — normalize back to normal on load so the app
-    // doesn't start stuck in plan mode after a restart (prePlanPermissionMode is lost)
+    // Plan mode is ephemeral — normalize back to the provider's safe default on
+    // load so the app doesn't start stuck in plan mode after a restart.
+    const safeModeFor = (providerId: string): string => (
+      providerCatalog().get(providerId)?.declarations.chatUI.permissionMode?.toggle()?.inactiveValue ?? 'normal'
+    );
+
     if (this.settings.permissionMode === 'plan') {
-      this.settings.permissionMode = 'normal';
+      this.settings.permissionMode = safeModeFor(getSettingsProviderId(this.settings)) as typeof this.settings.permissionMode;
     }
     if (
       this.settings.savedProviderPermissionMode
@@ -821,7 +825,7 @@ export default class GrimoirePlugin extends Plugin {
     ) {
       for (const [providerId, mode] of Object.entries(this.settings.savedProviderPermissionMode)) {
         if (mode === 'plan') {
-          this.settings.savedProviderPermissionMode[providerId] = 'normal';
+          this.settings.savedProviderPermissionMode[providerId] = safeModeFor(providerId);
         }
       }
     }
@@ -833,6 +837,19 @@ export default class GrimoirePlugin extends Plugin {
       && opencodeConfig.selectedMode === OPENCODE_PLAN_MODE_ID
     ) {
       opencodeConfig.selectedMode = OPENCODE_SAFE_MODE_ID;
+    }
+    if (this.settings.providerConfigs) {
+      for (const [providerId, config] of Object.entries(this.settings.providerConfigs)) {
+        if (
+          providerId !== 'opencode'
+          && config
+          && typeof config === 'object'
+          && !Array.isArray(config)
+          && config.selectedMode === 'plan'
+        ) {
+          config.selectedMode = safeModeFor(providerId);
+        }
+      }
     }
 
     const didNormalizeProviderSelection = ProviderSettingsCoordinator.normalizeProviderSelection(

@@ -24,7 +24,7 @@ const PROJECTION_KEYS = new Set([
 
 type ProviderProjectionMap = Partial<Record<string, string>>;
 
-function getSettingsProviderId(settings: Record<string, unknown>): ProviderId {
+export function getSettingsProviderId(settings: Record<string, unknown>): ProviderId {
   return resolveSettingsProviderId(settings);
 }
 
@@ -382,14 +382,19 @@ export class ProviderSettingsCoordinator {
       permissionToggle.inactiveValue,
       permissionToggle.activeValue,
       ...(permissionToggle.planValue ? [permissionToggle.planValue] : []),
+      ...(permissionToggle.options?.map(option => option.value) ?? []),
     ]);
     const currentPermissionMode = normalizeToggleValue(settings.permissionMode, allowedPermissionModes);
     const derivedPermissionMode = normalizeToggleValue(
       chatUI.permissionMode?.resolve?.(settings),
       allowedPermissionModes,
     );
+    const rawSavedMode = savedPermissionMode?.[providerId] === 'normal'
+      && !allowedPermissionModes.has('normal')
+      ? permissionToggle.inactiveValue
+      : savedPermissionMode?.[providerId];
     const savedPermissionModeValue = normalizeToggleValue(
-      savedPermissionMode?.[providerId],
+      rawSavedMode,
       allowedPermissionModes,
     );
 
@@ -398,9 +403,7 @@ export class ProviderSettingsCoordinator {
       ?? (shouldPreferCurrentProjection ? currentPermissionMode : undefined)
       ?? currentPermissionMode;
 
-    if (projectedPermissionMode !== undefined) {
-      settings.permissionMode = projectedPermissionMode;
-    }
+    settings.permissionMode = projectedPermissionMode ?? permissionToggle.inactiveValue;
   }
 
   /** Each provider's reconciler only processes its own conversations. */

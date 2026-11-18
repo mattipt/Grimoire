@@ -202,6 +202,10 @@ export function getPermissionSummary(providerId: ProviderId, permissionMode: str
   const toggle = providerCatalog().declarations(providerId)
     .chatUI.permissionMode?.toggle() ?? null;
   if (toggle) {
+    const matched = toggle.options?.find(option => option.value === permissionMode);
+    if (matched?.detail) {
+      return matched.detail;
+    }
     if (permissionMode === toggle.activeValue) {
       return toggle.activeDescription ?? t('chat.ui.context.autoApprove');
     }
@@ -225,6 +229,10 @@ export function getPermissionTitle(providerId: ProviderId, permissionMode: strin
   const toggle = providerCatalog().declarations(providerId)
     .chatUI.permissionMode?.toggle() ?? null;
   if (toggle) {
+    const matched = toggle.options?.find(option => option.value === permissionMode);
+    if (matched?.label) {
+      return matched.label;
+    }
     if (permissionMode === toggle.activeValue) {
       return toggle.activeLabel === 'Auto-approve' ? t('chat.ui.toolbar.permissionAuto') : toggle.activeLabel;
     }
