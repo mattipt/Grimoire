@@ -64,6 +64,7 @@
 .grimoire-chat-scroll {
   min-height: 0;
   overflow: hidden auto;
+  scrollbar-gutter: stable;
   padding: var(--grimoire-space-16) var(--grimoire-space-16) var(--grimoire-space-8);
   scrollbar-width: thin;
   scrollbar-color: var(--grimoire-line-3) transparent;
@@ -83,12 +84,17 @@
 }
 
 .grimoire-chat-scroll.grimoire-chat-scroll--quiet {
-  scrollbar-width: none;
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
 }
 
 .grimoire-chat-scroll.grimoire-chat-scroll--quiet::-webkit-scrollbar {
-  width: 0;
-  height: 0;
+  width: 6px;
+  height: 6px;
+}
+
+.grimoire-chat-scroll.grimoire-chat-scroll--quiet::-webkit-scrollbar-thumb {
+  background: transparent;
 }
 
 .grimoire-panel-content {
