@@ -19,7 +19,7 @@ import type GrimoirePlugin from '../../../main';
 import { createProviderIconSvg } from '../../../shared/icons';
 import { scheduleAnimationFrame } from '../../../utils/animationFrame';
 import { formatDurationMmSs } from '../../../utils/date';
-import { mayContainFileLinks, processFileLinks, registerFileLinkHandler } from '../../../utils/fileLink';
+import { mayContainFileLinks, openFileInMainEditor, processFileLinks, registerFileLinkHandler } from '../../../utils/fileLink';
 import { replaceImageEmbedsWithHtml } from '../../../utils/imageEmbed';
 import {
   escapeMathDelimitersForStreaming,
@@ -576,7 +576,7 @@ export class MessageRenderer {
 
     runRendererAction(async () => {
       try {
-        await this.app.workspace.getLeaf().openFile(file);
+        await openFileInMainEditor(this.app, file);
       } catch (error) {
         new Notice(t('chat.ui.errors.openFileFailed', {
           error: error instanceof Error ? error.message : String(error),

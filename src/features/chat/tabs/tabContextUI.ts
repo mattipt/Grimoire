@@ -5,6 +5,7 @@ import type { ProviderId } from '../../../core/providers/types';
 import { t } from '../../../i18n/i18n';
 import type GrimoirePlugin from '../../../main';
 import { validateContextPath } from '../../../utils/externalContext';
+import { openFileInMainEditor } from '../../../utils/fileLink';
 import { updateContextRowHasContent } from '../controllers/contextRowVisibility';
 import { ContextAttachments } from '../ui/context-manager/ContextAttachments';
 import { FileContextManager } from '../ui/FileContext';
@@ -466,7 +467,7 @@ export function openRelevantVaultPath(plugin: GrimoirePlugin, path: string): voi
 
   void (async (): Promise<void> => {
     try {
-      await plugin.app.workspace.getLeaf().openFile(file);
+      await openFileInMainEditor(plugin.app, file);
     } catch (error) {
       new Notice(t('chat.ui.errors.openFileFailed', {
         error: error instanceof Error ? error.message : String(error),
