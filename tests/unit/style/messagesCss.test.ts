@@ -69,25 +69,25 @@ describe('messages.css', () => {
     expect(renderedMarkdownRule).toContain('overflow-x: auto');
   });
 
-  it('makes wide markdown tables scroll inside the message instead of clipping text', () => {
-    const wrapperRule = getRule(readMessagesCss(), '.grimoire-message-content .grimoire-table-scroll');
+  it('renders markdown tables at full message width with natural cell wrapping', () => {
+    const css = readMessagesCss();
+    const wrapperRule = getRule(css, '.grimoire-message-content .grimoire-table-scroll');
 
     expect(wrapperRule).toContain('display: block');
     expect(wrapperRule).toContain('max-width: 100%');
     expect(wrapperRule).toContain('overflow-x: auto');
     expect(wrapperRule).toContain('overflow-y: hidden');
 
-    const tableRule = getRule(readMessagesCss(), '.grimoire-message-content .grimoire-table-scroll > table');
+    const tableRule = getRule(css, '.grimoire-message-content .grimoire-table-scroll > table');
 
-    expect(tableRule).toContain('width: max-content');
-    expect(tableRule).toContain('min-width: 100%');
-    expect(tableRule).toContain('max-width: none');
+    expect(tableRule).toContain('width: 100%');
+    expect(tableRule).toContain('max-width: 100%');
     expect(tableRule).toContain('table-layout: auto');
 
-    const cellRule = getRule(readMessagesCss(), '.grimoire-message-content th,\n.grimoire-message-content td');
-    expect(cellRule).toContain('overflow-wrap: normal');
+    const cellRule = getRule(css, '.grimoire-message-content th,\n.grimoire-message-content td');
+    expect(cellRule).toContain('overflow-wrap: break-word');
     expect(cellRule).toContain('word-break: normal');
-    expect(cellRule).toContain('white-space: nowrap');
+    expect(cellRule).toContain('white-space: normal');
   });
 
   it('wraps provider markdown prose without clipping long links or paths', () => {
