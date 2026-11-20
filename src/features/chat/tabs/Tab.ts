@@ -1700,10 +1700,18 @@ export function wireTabInputEvents(tab: TabData, plugin: GrimoirePlugin): void {
 
   // Scroll listener for auto-scroll control (tracks position always, not just during streaming)
   let reEnableTimeout: number | null = null;
+  let lastScrollHeight = dom.chatScrollEl.scrollHeight;
+  let lastScrollTop = dom.chatScrollEl.scrollTop;
 
   const isAutoScrollAllowed = (): boolean => plugin.settings.enableAutoScroll ?? true;
 
   const scrollHandler = () => {
+    const currentScrollHeight = dom.chatScrollEl.scrollHeight;
+    const currentScrollTop = dom.chatScrollEl.scrollTop;
+    const grew = currentScrollHeight > lastScrollHeight && currentScrollTop >= lastScrollTop - 2;
+    lastScrollHeight = currentScrollHeight;
+    lastScrollTop = currentScrollTop;
+
     if (!isAutoScrollAllowed()) {
       if (reEnableTimeout) {
         window.clearTimeout(reEnableTimeout);
@@ -1716,28 +1724,39 @@ export function wireTabInputEvents(tab: TabData, plugin: GrimoirePlugin): void {
 
     const isAtBottom = isTabScrollAtBottom(tab);
 
-    if (!isAtBottom) {
-      // Immediately disable when user scrolls up
-      if (reEnableTimeout) {
-        window.clearTimeout(reEnableTimeout);
-        reEnableTimeout = null;
+    if (isAtBottom) {
+      if (!state.autoScrollEnabled) {
+        // Debounce re-enabling to avoid bounce during scroll animation
+        if (!reEnableTimeout) {
+          reEnableTimeout = window.setTimeout(() => {
+            reEnableTimeout = null;
+            if (isTabScrollAtBottom(tab)) {
+              state.autoScrollEnabled = true;
+            }
+            updateAutoScrollUI(tab, plugin);
+          }, AUTO_SCROLL_REENABLE_DELAY_MS);
+        }
+      } else {
+        updateAutoScrollUI(tab, plugin);
       }
-      state.autoScrollEnabled = false;
-      updateAutoScrollUI(tab, plugin);
-    } else if (!state.autoScrollEnabled) {
-      // Debounce re-enabling to avoid bounce during scroll animation
-      if (!reEnableTimeout) {
-        reEnableTimeout = window.setTimeout(() => {
-          reEnableTimeout = null;
-          if (isTabScrollAtBottom(tab)) {
-            state.autoScrollEnabled = true;
-          }
-          updateAutoScrollUI(tab, plugin);
-        }, AUTO_SCROLL_REENABLE_DELAY_MS);
-      }
-    } else {
-      updateAutoScrollUI(tab, plugin);
+      return;
     }
+
+    if (state.autoScrollEnabled && state.isStreaming && grew) {
+      // Preserve auto-follow when a streaming DOM jump (> threshold) fires a scroll event.
+      dom.chatScrollEl.scrollTop = currentScrollHeight;
+      lastScrollTop = dom.chatScrollEl.scrollTop;
+      updateAutoScrollUI(tab, plugin);
+      return;
+    }
+
+    // Immediately disable when user scrolls up
+    if (reEnableTimeout) {
+      window.clearTimeout(reEnableTimeout);
+      reEnableTimeout = null;
+    }
+    state.autoScrollEnabled = false;
+    updateAutoScrollUI(tab, plugin);
   };
 
   dom.chatScrollEl.addEventListener('scroll', scrollHandler, { passive: true });

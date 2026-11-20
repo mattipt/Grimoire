@@ -1565,6 +1565,55 @@ describe('Tab - Event Wiring', () => {
       expect(tab.state.autoScrollEnabled).toBe(false);
       expect(tab.dom.chatScrollEl.hasClass('grimoire-chat-scroll--quiet')).toBe(false);
     });
+
+    it('keeps auto-scroll enabled and pins to bottom when streaming DOM height grows', () => {
+      const options = createMockOptions();
+      const tab = createTab(options);
+      tab.controllers.inputController = { sendMessage: jest.fn() } as any;
+      tab.controllers.selectionController = { showHighlight: jest.fn() } as any;
+      tab.state.autoScrollEnabled = true;
+      tab.state.isStreaming = true;
+
+      let scrollHeight = 1000;
+      Object.defineProperties(tab.dom.chatScrollEl, {
+        scrollTop: { value: 600, writable: true },
+        scrollHeight: { get: () => scrollHeight, configurable: true },
+        clientHeight: { value: 400, configurable: true },
+      });
+
+      wireTabInputEvents(tab, options.plugin);
+
+      scrollHeight = 1350;
+      tab.dom.chatScrollEl.dispatchEvent(new Event('scroll'));
+
+      expect(tab.state.autoScrollEnabled).toBe(true);
+      expect(tab.dom.chatScrollEl.scrollTop).toBe(1350);
+      expect(tab.dom.chatScrollEl.hasClass('grimoire-chat-scroll--quiet')).toBe(true);
+    });
+
+    it('pauses auto-scroll if the user scrolls up even while streaming DOM height grows', () => {
+      const options = createMockOptions();
+      const tab = createTab(options);
+      tab.controllers.inputController = { sendMessage: jest.fn() } as any;
+      tab.controllers.selectionController = { showHighlight: jest.fn() } as any;
+      tab.state.autoScrollEnabled = true;
+      tab.state.isStreaming = true;
+
+      let scrollHeight = 1000;
+      Object.defineProperties(tab.dom.chatScrollEl, {
+        scrollTop: { value: 600, writable: true },
+        scrollHeight: { get: () => scrollHeight, configurable: true },
+        clientHeight: { value: 400, configurable: true },
+      });
+
+      wireTabInputEvents(tab, options.plugin);
+
+      scrollHeight = 1200;
+      tab.dom.chatScrollEl.scrollTop = 450;
+      tab.dom.chatScrollEl.dispatchEvent(new Event('scroll'));
+
+      expect(tab.state.autoScrollEnabled).toBe(false);
+    });
   });
 });
 
