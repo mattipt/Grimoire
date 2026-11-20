@@ -28,6 +28,7 @@ TIER2_PATCHES=(
   "patch/14-full-width-assistant-layout"
   "patch/15-antigravity-hide-parallel-workers"
   "patch/16-user-message-chat-bubble"
+  "patch/17-antigravity-neutralize-expanded-slash-tokens"
   "fork/provenance"
 )
 

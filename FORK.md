@@ -9,7 +9,7 @@ flowchart LR
     U["upstream/main (sandsaber/Grimoire)"] --> M["main (Untouched Upstream Mirror)"]
     M --> P1["patch/01..10 (Atomic Tier 1 Topic Branches)"]
     P1 --> F["fixes/upstream (Tier 1 Integration)"]
-    M --> P2["patch/11..16 + fork/provenance (Tier 2)"]
+    M --> P2["patch/11..17 + fork/provenance (Tier 2)"]
     F --> C["fork/custom (Default Branch: Tier 2 + Provenance)"]
     P2 --> C
 ```
@@ -17,7 +17,7 @@ flowchart LR
 - **`main`**: Fast-forward mirror of `upstream/main`. Never receives custom commits.
 - **`fixes/upstream`**: Provider-neutral bug fixes and general UI/rendering improvements suitable for upstream PRs.
 - **`fork/custom`**: Default branch consumed for BRAT releases, layering Antigravity CLI workflow improvements, full-width assistant prose layout, and `fork/provenance` (`manifest.json`, `README.md`, `FORK.md`, About links, and `-fork.<N>` release support).
-- **`patch/01`–`patch/16`**: Standalone single-concern topic branches so every fix can be inspected or opened as a clean, isolated PR against `sandsaber/Grimoire:main`.
+- **`patch/01`–`patch/17`**: Standalone single-concern topic branches so every fix can be inspected or opened as a clean, isolated PR against `sandsaber/Grimoire:main`.
 
 ## Patch Inventory
 
@@ -46,6 +46,7 @@ flowchart LR
 | `patch/14-full-width-assistant-layout` | `main` | Allow assistant prose blocks to expand to full message width (`max-width: 100%`) |
 | `patch/15-antigravity-hide-parallel-workers` | `main` | Hide the ineffective Parallel workers toggle and clear `orchestratorMode` when the active provider is Antigravity |
 | `patch/16-user-message-chat-bubble` | `main` | Style user messages as distinct rounded light-blue chat bubbles with border and subtle elevation |
+| `patch/17-antigravity-neutralize-expanded-slash-tokens` | `main` | Neutralize colliding `agy` built-in slash command tokens inside expanded vault workflow/skill bodies so `/open`, `/end`, `/spec`, etc. never inject stray `</excluded_folders>/plan` or `<PLAN>` directives |
 | `fork/provenance` | `main` | Fork identity (`manifest.json`, `README.md`, `FORK.md`, Settings → About links), `sync-fork-stack.sh`, and `-fork.<N>` release metadata support |
 
 ## Syncing with Upstream
