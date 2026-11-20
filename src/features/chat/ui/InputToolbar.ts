@@ -1514,27 +1514,31 @@ export class PermissionToggle {
     const mode = this.callbacks.getSettings().permissionMode;
     const planValue = toggleConfig.planValue;
     const canShowPlan = Boolean(planValue) && capabilities.supportsPlanMode;
-    const options = [
-      {
-        detail: toggleConfig.inactiveDescription ?? t('chat.ui.toolbar.permissionSafeDetail'),
-        label: toggleConfig.inactiveLabel === 'Safe' ? t('chat.ui.toolbar.permissionSafe')
-          : toggleConfig.inactiveLabel === 'Blocked' ? t('chat.ui.status.blocked') : toggleConfig.inactiveLabel,
-        value: toggleConfig.inactiveValue,
-      },
-      {
-        detail: toggleConfig.activeDescription ?? t('chat.ui.toolbar.permissionAutoDetail'),
-        label: toggleConfig.activeLabel === 'Auto-approve' ? t('chat.ui.toolbar.permissionAuto') : toggleConfig.activeLabel,
-        value: toggleConfig.activeValue,
-      },
-      ...(canShowPlan && planValue
-        ? [{
-          detail: toggleConfig.planDescription ?? t('chat.ui.toolbar.permissionPlanDetail'),
-          label: !toggleConfig.planLabel || toggleConfig.planLabel === 'Plan'
-            ? t('chat.ui.toolbar.permissionPlan') : toggleConfig.planLabel,
-          value: planValue,
-        }]
-        : []),
-    ];
+    const options: Array<{ detail: string; label: string; value: string; icon?: string }> = toggleConfig.options
+      ? toggleConfig.options
+        .filter(option => !planValue || option.value !== planValue || canShowPlan)
+        .map(option => ({ ...option }))
+      : [
+        {
+          detail: toggleConfig.inactiveDescription ?? t('chat.ui.toolbar.permissionSafeDetail'),
+          label: toggleConfig.inactiveLabel === 'Safe' ? t('chat.ui.toolbar.permissionSafe')
+            : toggleConfig.inactiveLabel === 'Blocked' ? t('chat.ui.status.blocked') : toggleConfig.inactiveLabel,
+          value: toggleConfig.inactiveValue,
+        },
+        {
+          detail: toggleConfig.activeDescription ?? t('chat.ui.toolbar.permissionAutoDetail'),
+          label: toggleConfig.activeLabel === 'Auto-approve' ? t('chat.ui.toolbar.permissionAuto') : toggleConfig.activeLabel,
+          value: toggleConfig.activeValue,
+        },
+        ...(canShowPlan && planValue
+          ? [{
+            detail: toggleConfig.planDescription ?? t('chat.ui.toolbar.permissionPlanDetail'),
+            label: !toggleConfig.planLabel || toggleConfig.planLabel === 'Plan'
+              ? t('chat.ui.toolbar.permissionPlan') : toggleConfig.planLabel,
+            value: planValue,
+          }]
+          : []),
+      ];
     const currentOption = options.find(option => option.value === mode) ?? options[0];
 
     /*
@@ -1549,11 +1553,14 @@ export class PermissionToggle {
      * The guard is up, the guard is down, or the work is a route staked out
      * before anything is touched, which is the glyph the design draws for it.
      */
-    const isPlan = Boolean(planValue) && mode === planValue;
-    const isAuto = mode === toggleConfig.activeValue;
+    const isPlan = Boolean(planValue) && currentOption.value === planValue;
+    const isActiveHighlight = !isPlan && currentOption.value !== toggleConfig.inactiveValue;
     this.labelEl.empty();
-    setIcon(this.labelEl, isPlan ? 'route' : isAuto ? 'shield-off' : 'shield');
-    this.labelEl.toggleClass('active', isAuto);
+    setIcon(
+      this.labelEl,
+      currentOption.icon ?? (isPlan ? 'route' : currentOption.value === toggleConfig.activeValue ? 'shield-off' : 'shield'),
+    );
+    this.labelEl.toggleClass('active', isActiveHighlight);
     this.labelEl.toggleClass('plan-active', isPlan);
     this.labelEl.setAttribute('aria-expanded', String(this.gearsEl.hasClass('open')));
     this.labelEl.setAttribute(
@@ -1578,7 +1585,7 @@ export class PermissionToggle {
      * then run, then read-only until a plan is approved.
      */
     for (const option of options) {
-      const isSelected = option.value === mode;
+      const isSelected = option.value === currentOption.value;
       const optionEl = this.optionsEl.createDiv({ cls: 'grimoire-permission-option' });
       const checkEl = optionEl.createSpan({ cls: 'grimoire-menu-check' });
       markDecorative(checkEl);
@@ -1657,6 +1664,16 @@ export function getNextPermissionMode(
   supportsPlanMode: boolean,
 ): string {
   const planValue = toggleConfig.planValue;
+  if (toggleConfig.options && toggleConfig.options.length > 0) {
+    const available = toggleConfig.options.filter(
+      option => !planValue || option.value !== planValue || supportsPlanMode,
+    );
+    if (available.length > 0) {
+      const index = available.findIndex(option => option.value === current);
+      return available[(index + 1) % available.length].value;
+    }
+  }
+
   if (supportsPlanMode && planValue) {
     if (current === toggleConfig.inactiveValue) return toggleConfig.activeValue;
     if (current === toggleConfig.activeValue) return planValue;

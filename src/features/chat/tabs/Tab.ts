@@ -826,6 +826,14 @@ function initializeInputToolbar(
       syncContextSummary(tab, plugin);
     },
     onPermissionModeChange: async (mode: string) => {
+      const previousMode = getTabPermissionMode(tab, plugin);
+      if (mode === 'plan') {
+        if (previousMode !== 'plan' && tab.state.prePlanPermissionMode === null) {
+          tab.state.prePlanPermissionMode = previousMode;
+        }
+      } else {
+        tab.state.prePlanPermissionMode = null;
+      }
       await updateTabProviderSettings(
         tab,
         plugin,
@@ -1538,7 +1546,8 @@ export function initializeTabControllers(
       : undefined,
     restorePrePlanPermissionModeIfNeeded: () => {
       if (getTabPermissionMode(tab, plugin) === 'plan') {
-        const restoreMode = tab.state.prePlanPermissionMode ?? 'normal';
+        const defaultMode = getTabChatUIConfig(tab, plugin).permissionMode?.toggle()?.inactiveValue ?? 'normal';
+        const restoreMode = tab.state.prePlanPermissionMode ?? defaultMode;
         tab.state.prePlanPermissionMode = null;
         updatePlanModeUI(tab, plugin, restoreMode);
       }
@@ -1921,7 +1930,8 @@ export function setupServiceCallbacks(tab: TabData, plugin: GrimoirePlugin): voi
       if (decision !== null && decision.type !== 'feedback') {
         // Only restore permission mode if still in plan mode — user may have toggled out via Shift+Tab
         if (getTabPermissionMode(tab, plugin) === 'plan') {
-          const restoreMode = tab.state.prePlanPermissionMode ?? 'normal';
+          const defaultMode = getTabChatUIConfig(tab, plugin).permissionMode?.toggle()?.inactiveValue ?? 'normal';
+          const restoreMode = tab.state.prePlanPermissionMode ?? defaultMode;
           tab.state.prePlanPermissionMode = null;
           updatePlanModeUI(tab, plugin, restoreMode);
         }
@@ -1931,10 +1941,19 @@ export function setupServiceCallbacks(tab: TabData, plugin: GrimoirePlugin): voi
 
     permissionModeSync: (sdkMode: string) => {
       // Claude SDK uses bypassPermissions; ACP providers emit already-normalized
-      // Grimoire modes (full_access / plan / normal). Unknown values stay Safe.
+      // Grimoire modes or provider-specific options. Unknown values stay at the
+      // provider's inactiveValue ('default' or 'normal').
+      const toggle = getTabChatUIConfig(tab, plugin).permissionMode?.toggle() ?? null;
+      const defaultMode = toggle?.inactiveValue || 'normal';
+      const allowedOptionValues = toggle?.options?.map(option => option.value) ?? null;
+      const coerced = coercePermissionMode(sdkMode);
       const mode = sdkMode === 'bypassPermissions' || sdkMode === LEGACY_YOLO_PERMISSION_MODE
         ? 'full_access'
-        : coercePermissionMode(sdkMode) ?? 'normal';
+        : allowedOptionValues?.includes(sdkMode)
+          ? sdkMode
+          : coerced
+            ? (allowedOptionValues && !allowedOptionValues.includes(coerced) ? defaultMode : coerced)
+            : defaultMode;
       const currentMode = getTabPermissionMode(tab, plugin);
 
       if (currentMode !== mode) {

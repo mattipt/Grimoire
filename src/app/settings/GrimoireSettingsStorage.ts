@@ -8,6 +8,8 @@ import {
   inferEnvironmentSnippetScope,
   resolveEnvironmentSnippetScope,
 } from '../../core/providers/providerEnvironment';
+import type { ProviderPermissionModeToggle } from '../../core/providers/ProviderModule';
+import { DEFAULT_CHAT_PROVIDER_ID } from '../../core/providers/types';
 import type { VaultFileAdapter } from '../../core/storage/VaultFileAdapter';
 import {
   type AdvancedSectionsOpen,
@@ -18,10 +20,12 @@ import {
   type EnvSnippet,
   type GrimoireSettings,
   type HiddenProviderCommands,
+  LEGACY_YOLO_PERMISSION_MODE,
   normalizeMaxTabs,
   normalizePermissionMode,
   normalizeRunAbsoluteTimeoutMinutes,
   normalizeSessionIdleTimeoutMinutes,
+  type PermissionMode,
   type ProviderConfigMap,
   type TabBarPosition,
 } from '../../core/types/settings';
@@ -314,6 +318,39 @@ function normalizeEnvSnippets(value: unknown): EnvSnippet[] {
   return snippets;
 }
 
+function getProviderPermissionToggle(providerId: string): ProviderPermissionModeToggle | null {
+  return builtInProviderCatalog.get(providerId)?.declarations.chatUI.permissionMode?.toggle() ?? null;
+}
+
+function normalizeProviderPermissionModeValue(
+  providerId: string,
+  value: unknown,
+): string | undefined {
+  if (typeof value !== 'string') {
+    return undefined;
+  }
+
+  const toggle = getProviderPermissionToggle(providerId);
+  if (!toggle) {
+    return coercePermissionMode(value);
+  }
+
+  const allowedValues = new Set([
+    toggle.inactiveValue,
+    toggle.activeValue,
+    ...(toggle.planValue ? [toggle.planValue] : []),
+    ...(toggle.options?.map(option => option.value) ?? []),
+  ]);
+  const trimmed = value.trim();
+  const mapped = trimmed === LEGACY_YOLO_PERMISSION_MODE
+    ? toggle.activeValue
+    : trimmed === 'normal' && !allowedValues.has('normal')
+      ? toggle.inactiveValue
+      : trimmed;
+
+  return allowedValues.has(mapped) ? mapped : coercePermissionMode(value);
+}
+
 function normalizeSavedProviderPermissionMode(value: unknown): Partial<Record<string, string>> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return {};
@@ -321,7 +358,7 @@ function normalizeSavedProviderPermissionMode(value: unknown): Partial<Record<st
 
   const result: Partial<Record<string, string>> = {};
   for (const [providerId, entry] of Object.entries(value)) {
-    const normalized = coercePermissionMode(entry);
+    const normalized = normalizeProviderPermissionModeValue(providerId, entry);
     if (normalized) {
       result[providerId] = normalized;
     }
@@ -348,6 +385,22 @@ function mergeLegacyClaudeHiddenCommands(
   };
 }
 
+function resolveActiveSettingsProviderId(settings: Record<string, unknown>): string {
+  const catalog = builtInProviderCatalog;
+  const current = settings.settingsProvider;
+  if (typeof current === 'string' && catalog.has(current) && catalog.isEnabled(settings, current)) {
+    return current;
+  }
+  const enabled = catalog.enabledIds(settings);
+  if (enabled.length === 0) {
+    return typeof current === 'string' && catalog.has(current) ? current : DEFAULT_CHAT_PROVIDER_ID;
+  }
+  if (catalog.isEnabled(settings, DEFAULT_CHAT_PROVIDER_ID)) {
+    return DEFAULT_CHAT_PROVIDER_ID;
+  }
+  return enabled[0];
+}
+
 export class GrimoireSettingsStorage {
   constructor(private adapter: VaultFileAdapter) {}
 
@@ -369,10 +422,19 @@ export class GrimoireSettingsStorage {
     const customModelAliases = normalizeModelAliases(stored.customModelAliases);
     const advancedSectionsOpen = normalizeAdvancedSectionsOpen(stored.advancedSectionsOpen);
     const providerConfigs = normalizeProviderConfigs(stored.providerConfigs);
-    const permissionMode = normalizePermissionMode(
-      stored.permissionMode,
-      DEFAULT_GRIMOIRE_SETTINGS.permissionMode,
-    );
+    const legacyProviderSettings = {
+      ...stored,
+      hiddenProviderCommands,
+      providerConfigs,
+    };
+    const activeProviderId = resolveActiveSettingsProviderId(legacyProviderSettings);
+    const activeToggle = getProviderPermissionToggle(activeProviderId);
+    const permissionMode = (
+      normalizeProviderPermissionModeValue(activeProviderId, stored.permissionMode)
+      ?? (activeToggle
+        ? (activeToggle.inactiveValue as PermissionMode)
+        : normalizePermissionMode(stored.permissionMode, DEFAULT_GRIMOIRE_SETTINGS.permissionMode))
+    ) as PermissionMode;
     const savedProviderPermissionMode = normalizeSavedProviderPermissionMode(
       stored.savedProviderPermissionMode,
     );
@@ -391,11 +453,6 @@ export class GrimoireSettingsStorage {
     const sessionIdleTimeoutMinutes = normalizeSessionIdleTimeoutMinutes(
       stored.sessionIdleTimeoutMinutes,
     );
-    const legacyProviderSettings = {
-      ...stored,
-      hiddenProviderCommands,
-      providerConfigs,
-    };
     const storedWithoutLegacy = stripLegacyFields({
       ...legacyProviderSettings,
     });
