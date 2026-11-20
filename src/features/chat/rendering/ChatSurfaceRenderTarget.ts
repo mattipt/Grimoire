@@ -85,6 +85,7 @@ export interface ChatStreamOperations {
 /** What the target needs from the renderer that owns the message elements. */
 export interface ChatMessageOperations {
   addMessage(msg: ChatMessage): HTMLElement;
+  updateLiveUserMessage?(msg: ChatMessage): void;
   renderMessages(
     messages: ChatMessage[],
     getGreeting: () => string,
@@ -208,6 +209,19 @@ export class ChatSurfaceRenderTarget implements ChatRenderTarget {
   }
 
   appendMessage(message: ChatMessage): void {
+    const existingIndex = this.deps.state.messages.findIndex(
+      candidate => candidate.id === message.id,
+    );
+    if (existingIndex >= 0) {
+      const next = [...this.deps.state.messages];
+      next[existingIndex] = message;
+      this.deps.state.messages = next;
+      if (message.role === 'user') {
+        this.deps.renderer.updateLiveUserMessage?.(message);
+      }
+      return;
+    }
+
     // The pair the surface already performs together: the state's copy is what
     // rewind, save and the action buttons read, and the renderer's element is
     // what a person sees. One without the other is a message that exists in

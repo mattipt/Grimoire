@@ -89,6 +89,9 @@ function harness() {
       calls.push({ method: 'renderer.addMessage', args: [message] });
       return messageEl as unknown as HTMLElement;
     },
+    updateLiveUserMessage: (message: ChatMessage) => {
+      calls.push({ method: 'renderer.updateLiveUserMessage', args: [message] });
+    },
     renderMessages: (messages: ChatMessage[]) => {
       calls.push({ method: 'renderer.renderMessages', args: [messages] });
       return messageEl as unknown as HTMLElement;
@@ -615,6 +618,30 @@ describe('chat surface render target', () => {
     expect(chat.state.currentContentEl).toBeNull();
     await drained(chat.target);
     expect(chat.state.messages).toEqual([expect.objectContaining({ id: 'msg-1' })]);
+  });
+
+  it('updates an optimistic user message in place when appendMessage sees the same id', async () => {
+    const chat = harness();
+    chat.state.messages = [{
+      id: 'user-opt',
+      role: 'user',
+      content: 'raw prompt',
+      displayContent: 'raw prompt',
+      timestamp: 1,
+    }];
+
+    chat.target.appendMessage({
+      id: 'user-opt',
+      role: 'user',
+      content: 'composed prompt',
+      displayContent: 'raw prompt',
+      timestamp: 1,
+    });
+
+    await drained(chat.target);
+    expect(chat.state.messages).toHaveLength(1);
+    expect(chat.state.messages[0].content).toBe('composed prompt');
+    expect(chat.methods()).toEqual(['renderer.updateLiveUserMessage']);
   });
 });
 
