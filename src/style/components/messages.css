@@ -310,7 +310,7 @@
 .grimoire-message-assistant .grimoire-text-block {
   justify-self: start;
   width: 100%;
-  max-width: min(100%, 760px);
+  max-width: 100%;
 }
 
 .grimoire-message-user .grimoire-text-block {

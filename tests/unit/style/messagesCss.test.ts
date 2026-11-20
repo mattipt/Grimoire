@@ -118,7 +118,7 @@ describe('messages.css', () => {
     expect(copyButtonRule).toContain('box-sizing: border-box');
   });
 
-  it('keeps assistant markdown and copy controls in a capped content column on wide panes', () => {
+  it('lets assistant markdown expand to the full message width', () => {
     const assistantTextBlockRule = getExactRule(
       readMessagesCss(),
       '.grimoire-message-assistant .grimoire-text-block'
@@ -126,7 +126,7 @@ describe('messages.css', () => {
 
     expect(assistantTextBlockRule).toContain('justify-self: start');
     expect(assistantTextBlockRule).toContain('width: 100%');
-    expect(assistantTextBlockRule).toContain('max-width: min(100%, 760px)');
+    expect(assistantTextBlockRule).toContain('max-width: 100%');
   });
 
   it('does not reserve assistant copy-button space inside user bubbles', () => {
