@@ -163,7 +163,11 @@ export interface ManagedAcpExecutionResultSink {
   noteTurnEnded?(input: {
     readonly nativeSessionRef: string;
     readonly nativeRunRef?: string;
+    readonly output?: string;
     readonly presentContent: (payload: unknown) => void;
+    readonly presentNotification?: (notification: AcpSessionNotification) => void;
+    readonly isCancelled?: () => boolean;
+    readonly noteActivity?: () => void;
     /**
      * The connection this turn ran on, for a provider that has to ask.
      *
@@ -1416,7 +1420,11 @@ class ManagedAcpExecutionRun implements ExecutionRun {
       await sink.noteTurnEnded({
         nativeSessionRef: this.sessionRef,
         ...(this.nativeRunRef ? { nativeRunRef: this.nativeRunRef } : {}),
+        output: this.output,
         presentContent: payload => this.presentProviderContent(payload),
+        presentNotification: notification => this.handleNotification(notification),
+        isCancelled: () => this.terminal || this.terminationIntent !== undefined,
+        noteActivity: () => this.armInactivityTimeout(),
         client,
       });
     } catch {

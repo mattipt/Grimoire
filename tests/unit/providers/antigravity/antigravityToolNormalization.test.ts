@@ -7,7 +7,10 @@ describe('antigravityToolNormalization', () => {
   it('maps agy tool names onto the neutral ones the chat renders', () => {
     expect(normalizeAntigravityToolName('run_command')).toBe('Bash');
     expect(normalizeAntigravityToolName('view_file')).toBe('Read');
+    expect(normalizeAntigravityToolName('read_file')).toBe('Read');
     expect(normalizeAntigravityToolName('write_to_file')).toBe('Write');
+    expect(normalizeAntigravityToolName('write_file')).toBe('Write');
+    expect(normalizeAntigravityToolName('edit_file')).toBe('Edit');
     expect(normalizeAntigravityToolName('replace_file_content')).toBe('Edit');
     expect(normalizeAntigravityToolName('grep_search')).toBe('Grep');
   });
@@ -23,6 +26,13 @@ describe('antigravityToolNormalization', () => {
       .toEqual({ CommandLine: 'npm run build', command: 'npm run build' });
     expect(normalizeAntigravityToolInput('view_file', { AbsolutePath: '/repo/src/main.ts' }))
       .toEqual({ AbsolutePath: '/repo/src/main.ts', file_path: '/repo/src/main.ts' });
+    expect(normalizeAntigravityToolInput('edit_file', { Path: '/repo/src/utils/fileLink.ts', Content: 'x' }))
+      .toEqual({
+        Path: '/repo/src/utils/fileLink.ts',
+        file_path: '/repo/src/utils/fileLink.ts',
+        Content: 'x',
+        content: 'x',
+      });
   });
 
   it('maps the search needle onto pattern rather than query', () => {

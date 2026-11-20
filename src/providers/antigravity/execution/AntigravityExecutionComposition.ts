@@ -3,7 +3,11 @@ import { createHash, randomUUID } from 'node:crypto';
 import { NodeManagedAcpProcessLauncher } from '@/app/execution/acp/NodeManagedAcpProcessLauncher';
 import { delayThroughWindow } from '@/app/execution/hostTimers';
 import { ProviderWorkspaceHolder } from '@/app/execution/ProviderWorkspaceHolder';
-import type { RunTerminalReason } from '@/core/execution/ExecutionContracts';
+import type {
+  RunRecoveryEvidence,
+  RunRecoveryQuery,
+  RunTerminalReason,
+} from '@/core/execution/ExecutionContracts';
 import { executionSessionId, interactionId, runId, sessionInstanceId } from '@/core/execution/ExecutionIds';
 import type { BackendLifecycleRegistration, ExecutionLifecycleRegistry } from '@/core/execution/ExecutionLifecycleRegistry';
 import type { ProviderRuntimePorts, ProviderWorkspaceSlots } from '@/core/providers/ProviderModule';
@@ -64,6 +68,7 @@ import {
 } from '../runtime/AntigravityImageAttachments';
 import { AntigravityAcpContentPresenter } from './AntigravityAcpContentPresenter';
 import { AntigravityAcpRequests } from './AntigravityAcpRequests';
+import { createAgyContinuationController } from './AntigravityContinuationController';
 
 /** Combined stdout, stderr, and recovered-transcript ceiling for one run. */
 /**
@@ -83,6 +88,16 @@ import { AntigravityAcpRequests } from './AntigravityAcpRequests';
  */
 export const ANTIGRAVITY_OUTPUT_BYTE_LIMIT = 16 * 1024 * 1024;
 const OUTPUT_BYTE_LIMIT = ANTIGRAVITY_OUTPUT_BYTE_LIMIT;
+
+/** Reconciles an Antigravity ACP cancellation, treating post-`end_turn` stops as safe. */
+export function reconcileAntigravityAcpRun(query: RunRecoveryQuery): RunRecoveryEvidence {
+  const direct = acpCancellationEvidence(query);
+  if (direct) return direct;
+  if (query.cancellationRequested && query.nativeStopReason === 'end_turn') {
+    return { kind: 'stopped-safe' };
+  }
+  return { kind: 'unknown', effectsPossible: true };
+}
 
 /**
  * Antigravity chat execution, assembled from the running plugin.
@@ -120,6 +135,9 @@ export class AntigravityExecution {
     ...(typeof input.TargetFile === 'string' ? { blockedPath: input.TargetFile } : {}),
   }), () => opaqueId('agyix'));
   private readonly presenters = new Set<AcpApprovalPresenter>();
+  private readonly continuation = createAgyContinuationController(
+    () => buildAntigravityRuntimeEnv(this.plugin.settings, ''),
+  );
   private acpBackend: ManagedAcpExecutionBackend | undefined;
   /**
    * The temp files each tab's currently dispatched turn handed to `agy`, by tab.
@@ -255,21 +273,31 @@ export class AntigravityExecution {
           initialize: () => client.initialize(),
           newSession: async request => {
             const session = await client.newSession(request);
+            this.continuation.notePromptStarted(session.sessionId);
             this.acpRequests.rememberSession(wrapped, session);
             return session;
           },
           loadSession: async request => {
+            this.continuation.clearReplay(request.sessionId);
             const session = await client.loadSession(request);
             this.acpRequests.rememberSession(wrapped, { ...session, sessionId: request.sessionId });
             return session;
           },
-          prompt: request => client.prompt(request),
+          prompt: request => {
+            this.continuation.notePromptStarted(request.sessionId);
+            return client.prompt(request);
+          },
           setConfigOption: request => client.setConfigOption(request),
           setMode: request => client.setMode(request),
           setModel: request => client.setModel(request),
           ...(client.listSessions ? { listSessions: request => client.listSessions!(request) } : {}),
           cancel: sessionId => client.cancel(sessionId),
-          onSessionNotification: listener => client.onSessionNotification(listener),
+          onSessionNotification: listener => client.onSessionNotification(notification => {
+            if (!this.continuation.filterNotification(notification)) {
+              return;
+            }
+            listener(notification);
+          }),
           onConnectionLost: listener => client.onConnectionLost(listener),
           close: async () => {
             try { return await client.close(); }
@@ -295,9 +323,9 @@ export class AntigravityExecution {
             digest: createHash('sha256').update(input.output).digest('hex'),
           },
         },
+        noteTurnEnded: input => this.continuation.noteTurnEnded(input),
       },
-      reconciler: { reconcile: async query => acpCancellationEvidence(query)
-        ?? { kind: 'unknown', effectsPossible: true } },
+      reconciler: { reconcile: async query => reconcileAntigravityAcpRun(query) },
       auxiliaryQueries: { execute: async () => { throw new Error('Antigravity auxiliary execution is unsupported.'); } },
       scheduler: {
         setTimeout: (callback, delayMs) => window.setTimeout(callback, delayMs),
