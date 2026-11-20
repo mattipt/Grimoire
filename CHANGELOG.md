@@ -2,6 +2,14 @@
 
 User-facing changes by release.
 
+## 2.0.14-fork.2 - 2026-11-20
+
+### Fixed
+
+- Deduplicate live ACP continuation streams, eliminate false-positive background continuation polling, and reconcile post-`end_turn` cancellations cleanly as stopped-safe (`patch/13`).
+- Neutralize colliding built-in `agy` slash-command tokens inside expanded vault workflow/skill bodies so `/open`, `/end`, `/spec`, and other vault workflows no longer trigger stray `</excluded_folders>/plan` or `<PLAN>` directives (`patch/17`).
+- Sync Obsidian `theme-tokens.json` fixture with `--color-blue` used by user message bubbles so full CI unit verification passes (`patch/16`).
+
 ## 2.0.14 - 2026-11-12
 
 ### Added
