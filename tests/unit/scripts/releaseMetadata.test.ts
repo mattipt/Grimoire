@@ -113,4 +113,20 @@ describe('release metadata scripts', () => {
       rmSync(rootDir, { recursive: true, force: true });
     }
   });
+
+  it('supports -fork.N release tags anchored to the base upstream version metadata', () => {
+    const rootDir = createFixture();
+    try {
+      writeFileSync(join(rootDir, 'package.json'), JSON.stringify({ version: '1.2.3-fork.1' }));
+      writeFileSync(join(rootDir, 'manifest.json'), JSON.stringify({ version: '1.2.3-fork.1', minAppVersion: '1.13.0' }));
+      writeFileSync(join(rootDir, 'package-lock.json'), JSON.stringify({
+        version: '1.2.3-fork.1',
+        packages: { '': { version: '1.2.3-fork.1' } },
+      }));
+
+      expect(validateReleaseMetadata(rootDir)).toEqual({ version: '1.2.3-fork.1', errors: [] });
+    } finally {
+      rmSync(rootDir, { recursive: true, force: true });
+    }
+  });
 });

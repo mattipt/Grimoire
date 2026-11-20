@@ -20,12 +20,14 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Verify release tag is on main
+      - name: Verify release tag is on fork/custom or main
         run: |
           set -euo pipefail
-          git fetch origin main:refs/remotes/origin/main
-          if ! git merge-base --is-ancestor "${GITHUB_SHA}" origin/main; then
-            echo "Release tag ${GITHUB_REF_NAME} (${GITHUB_SHA}) must point to a commit on origin/main."
+          git fetch origin main:refs/remotes/origin/main || true
+          git fetch origin fork/custom:refs/remotes/origin/fork/custom || true
+          if ! git merge-base --is-ancestor "${GITHUB_SHA}" origin/fork/custom 2>/dev/null \
+            && ! git merge-base --is-ancestor "${GITHUB_SHA}" origin/main 2>/dev/null; then
+            echo "Release tag ${GITHUB_REF_NAME} (${GITHUB_SHA}) must point to a commit on origin/fork/custom or origin/main."
             exit 1
           fi
 
@@ -100,7 +102,7 @@ jobs:
           current_commit="$(git rev-list -n 1 "${tag}")"
           previous_tag="$(
             git tag --merged "${current_commit}" --sort=-v:refname \
-              | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' \
+              | grep -E '^[0-9]+\.[0-9]+\.[0-9]+(-fork\.[0-9]+)?$' \
               | grep -v "^${tag}$" \
               | head -n 1 || true
           )"

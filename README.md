@@ -1,4 +1,11 @@
-# Grimoire
+# Grimoire (mattipt Custom Fork)
+
+> [!NOTE]
+> **This repository (`mattipt/Grimoire`) is a maintained custom fork of [sandsaber/Grimoire](https://github.com/sandsaber/Grimoire) by Michael Makarov.**
+>
+> - Looking for the official upstream plugin and Community Plugins release? Visit **[sandsaber/Grimoire](https://github.com/sandsaber/Grimoire)**.
+> - This `fork/custom` branch layers provider-neutral upstream bug-fix candidates (`fixes/upstream`) and Antigravity CLI / workflow customizations (`fork/custom`) on top of an untouched upstream `main` mirror.
+> - See **[FORK.md](FORK.md)** for the full branch layout, individual upstream-PR-ready `patch/*` branches, upstream sync workflow, and BRAT release instructions (`mattipt/Grimoire`).
 
 <p align="center">
   <img src="assets/readme/grimoire-logo.png" alt="Grimoire logo" width="240">
