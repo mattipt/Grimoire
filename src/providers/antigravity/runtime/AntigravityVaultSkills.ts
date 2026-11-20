@@ -11,6 +11,17 @@ export interface AntigravityVaultSkillSource {
   listVaultEntries(): Promise<readonly { readonly name: string; readonly content?: string }[]>;
 }
 
+const AGY_BUILTIN_SLASH_TOKEN_PATTERN =
+  /(^|[\s([{`"'])\/(goal|compact|schedule|browser|plan|grill-me|teamwork|learn|boost)(?=$|[\s)}\]'"`.,:;?!])/gi;
+
+/**
+ * Breaks `agy acp`'s prompt-wide built-in slash-command scanner inside expanded
+ * vault workflow bodies without altering Markdown rendering or file paths.
+ */
+export function neutralizeAgyBuiltinSlashTokens(text: string): string {
+  return text.replace(AGY_BUILTIN_SLASH_TOKEN_PATTERN, '$1/\u200B$2');
+}
+
 /**
  * Turns `/skill args` into the skill's own instructions.
  *
@@ -44,7 +55,7 @@ export async function expandAntigravityVaultSkillInvocation(
   const expanded = [
     `You are executing the vault skill "${skillName}". Follow its instructions.`,
     '',
-    body,
+    neutralizeAgyBuiltinSlashTokens(body),
     argumentsText?.trim()
       ? `\nUser input for this skill:\n${argumentsText.trim()}`
       : '',
