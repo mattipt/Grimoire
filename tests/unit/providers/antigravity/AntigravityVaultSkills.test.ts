@@ -1,4 +1,7 @@
-import { expandAntigravityVaultSkillInvocation } from '@/providers/antigravity/runtime/AntigravityVaultSkills';
+import {
+  expandAntigravityVaultSkillInvocation,
+  neutralizeAgyBuiltinSlashTokens,
+} from '@/providers/antigravity/runtime/AntigravityVaultSkills';
 
 /**
  * What `/skill` means to a provider that has no slash commands.
@@ -11,6 +14,14 @@ describe('expandAntigravityVaultSkillInvocation', () => {
     listVaultEntries: async () => [
       { name: 'researcher', content: 'Read the vault and answer with citations.' },
       { name: 'empty', content: '   ' },
+      {
+        name: 'open',
+        content: [
+          'Run /plan review or /plan update?',
+          'Extract to /learn — reusable lesson.',
+          'Check `.agents/workflows/plan.md` and `https://example.com/plan`.',
+        ].join('\n'),
+      },
     ],
   };
 
@@ -62,5 +73,73 @@ describe('expandAntigravityVaultSkillInvocation', () => {
 
     await expect(expandAntigravityVaultSkillInvocation('/researcher hello', broken))
       .resolves.toBe('/researcher hello');
+  });
+
+  it('neutralizes built-in agy slash tokens inside expanded vault skills while keeping arguments and context tail intact', async () => {
+    const expanded = await expandAntigravityVaultSkillInvocation(
+      '/open check /plan handling\n\n<excluded_folders>\n  <folder>Archive</folder>\n</excluded_folders>',
+      skills,
+    );
+
+    expect(expanded).toBe([
+      'You are executing the vault skill "open". Follow its instructions.',
+      '',
+      'Run /\u200Bplan review or /\u200Bplan update?',
+      'Extract to /\u200Blearn — reusable lesson.',
+      'Check `.agents/workflows/plan.md` and `https://example.com/plan`.',
+      '',
+      'User input for this skill:',
+      'check /plan handling',
+      '',
+      '<excluded_folders>',
+      '  <folder>Archive</folder>',
+      '</excluded_folders>',
+    ].join('\n'));
+  });
+
+  it('leaves unmatched built-in slash prompts unchanged without inserting zero-width spaces', async () => {
+    await expect(expandAntigravityVaultSkillInvocation('/compact focus', skills))
+      .resolves.toBe('/compact focus');
+    await expect(expandAntigravityVaultSkillInvocation('/boost deeply', skills))
+      .resolves.toBe('/boost deeply');
+  });
+});
+
+describe('neutralizeAgyBuiltinSlashTokens', () => {
+  it('neutralizes all built-in agy slash commands across start-of-line, prose, backticks, parentheses, and quotes', () => {
+    const sample = [
+      '/learn <topic-name>',
+      '/plan [project]',
+      'Run /plan review or /plan update?',
+      'Extract to /learn — reusable lesson.',
+      '`⚠️ missing file. Run /plan to fix.`',
+      '`/plan create` and `/plan`',
+      '(proceed to plan /plan) and "/plan dev" and \'/PLAN\'',
+      'All commands: /plan /learn /goal /compact /schedule /browser /grill-me /teamwork /boost',
+      'Case variants: /PLAN /Learn',
+    ].join('\n');
+
+    expect(neutralizeAgyBuiltinSlashTokens(sample)).toBe([
+      '/\u200Blearn <topic-name>',
+      '/\u200Bplan [project]',
+      'Run /\u200Bplan review or /\u200Bplan update?',
+      'Extract to /\u200Blearn — reusable lesson.',
+      '`⚠️ missing file. Run /\u200Bplan to fix.`',
+      '`/\u200Bplan create` and `/\u200Bplan`',
+      '(proceed to plan /\u200Bplan) and "/\u200Bplan dev" and \'/\u200BPLAN\'',
+      'All commands: /\u200Bplan /\u200Blearn /\u200Bgoal /\u200Bcompact /\u200Bschedule /\u200Bbrowser /\u200Bgrill-me /\u200Bteamwork /\u200Bboost',
+      'Case variants: /\u200BPLAN /\u200BLearn',
+    ].join('\n'));
+  });
+
+  it('preserves file paths, URLs, extended word tokens, and non-agy PARA slash commands', () => {
+    const sample = [
+      'Paths: .agents/workflows/plan.md and docs/plan/readme.md and /plan/subpath',
+      'URL: https://example.com/plan',
+      'Extended words: /planning /plan-v2 /goals /learner /boosting',
+      'PARA commands: /open /end /spec /backlog /brainstorm',
+    ].join('\n');
+
+    expect(neutralizeAgyBuiltinSlashTokens(sample)).toBe(sample);
   });
 });
