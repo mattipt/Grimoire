@@ -2388,6 +2388,17 @@ describe('OrchestratorToggle', () => {
     expect(button?.getAttribute('aria-label')).toBe('Переключить параллельных исполнителей');
     expect(setTooltip).toHaveBeenCalledWith(button, 'Параллельные исполнители', { placement: 'top' });
   });
+
+  it('should hide and show its container via setVisible', () => {
+    const toggle = new OrchestratorToggle(parentEl, callbacks);
+    const container = parentEl.querySelector('.grimoire-orchestrator-toggle');
+
+    toggle.setVisible(false);
+    expect(container?.hasClass('grimoire-hidden')).toBe(true);
+
+    toggle.setVisible(true);
+    expect(container?.hasClass('grimoire-hidden')).toBe(false);
+  });
 });
 
 describe('createInputToolbar', () => {

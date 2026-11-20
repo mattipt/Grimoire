@@ -316,12 +316,18 @@ export function applyProviderUIGating(tab: TabData, plugin: GrimoirePlugin): voi
     ? getProviderMcpManager(capabilities.providerId, plugin)
     : null;
   const hasPermissionToggle = Boolean(chatUI.permissionMode?.toggle());
+  const supportsOrchestrator = capabilities.providerId !== 'antigravity';
 
   if (!capabilities.supportsMcpTools) {
     tab.ui.mcpServerSelector?.clearEnabled();
   }
+  if (!supportsOrchestrator && tab.orchestratorMode) {
+    tab.orchestratorMode = false;
+  }
   tab.ui.mcpServerSelector?.setVisible(capabilities.supportsMcpTools);
   tab.ui.permissionToggle?.setVisible(hasPermissionToggle);
+  tab.ui.orchestratorToggle?.setVisible?.(supportsOrchestrator);
+  tab.ui.orchestratorToggle?.updateDisplay();
   tab.ui.fileContextManager?.setMcpManager(mcpManager);
 
   tab.ui.fileContextManager?.setAgentService(
