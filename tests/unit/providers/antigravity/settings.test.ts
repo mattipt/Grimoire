@@ -1,6 +1,7 @@
 import {
   DEFAULT_ANTIGRAVITY_PROVIDER_SETTINGS,
   getAntigravityProviderSettings,
+  normalizeAntigravityWorkMode,
   updateAntigravityProviderSettings,
 } from '@/providers/antigravity/settings';
 
@@ -77,5 +78,17 @@ describe('Antigravity provider settings', () => {
       },
       visibleModels: ['Gemini 3.6 Flash (High)'],
     }));
+  });
+
+  it('round-trips selectedMode and normalizes legacy Antigravity mode aliases', () => {
+    const root: Record<string, unknown> = {};
+    updateAntigravityProviderSettings(root, { selectedMode: '  auto  ' });
+    expect(getAntigravityProviderSettings(root).selectedMode).toBe('auto');
+
+    expect(normalizeAntigravityWorkMode('normal')).toBe('default');
+    expect(normalizeAntigravityWorkMode('yolo')).toBe('full_access');
+    expect(normalizeAntigravityWorkMode('accept-edits')).toBe('accept-edits');
+    expect(normalizeAntigravityWorkMode('auto')).toBe('auto');
+    expect(normalizeAntigravityWorkMode('unknown')).toBeUndefined();
   });
 });

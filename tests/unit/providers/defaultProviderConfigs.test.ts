@@ -99,6 +99,7 @@ const DEFAULT_CONFIG_KEYS: Record<string, readonly string[]> = {
       'environmentHash',
       'environmentVariables',
       'modelAliases',
+      'selectedMode',
       'visibleModels',
     ],
     gemini: [

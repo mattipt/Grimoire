@@ -14,7 +14,11 @@ import {
   encodeAntigravityModelId,
   isAntigravityModelSelectionId,
 } from '../models';
-import { getAntigravityProviderSettings } from '../settings';
+import {
+  getAntigravityProviderSettings,
+  normalizeAntigravityWorkMode,
+  updateAntigravityProviderSettings,
+} from '../settings';
 
 const ANTIGRAVITY_MODELS: ProviderUIOption[] = [
   {
@@ -30,14 +34,49 @@ const ANTIGRAVITY_REASONING_OPTIONS: ProviderReasoningOption[] = [
 ];
 const DEFAULT_CONTEXT_WINDOW = 1_000_000;
 const ANTIGRAVITY_PERMISSION_MODE_TOGGLE: ProviderPermissionModeToggleConfig = {
-  inactiveValue: 'normal',
-  inactiveLabel: 'Safe',
-  inactiveDescription: 'Review Antigravity permission requests in chat. Requires agy acp.',
+  inactiveValue: 'default',
+  inactiveLabel: 'Default',
+  inactiveDescription: 'Ask before edits and commands, per your permission settings.',
   activeValue: 'full_access',
-  activeLabel: 'Auto-approve',
-  activeDescription: 'Antigravity may edit files without Grimoire prompts',
+  activeLabel: 'Bypass permissions',
+  activeDescription: 'Launch agy acp with --dangerously-skip-permissions (skips all permission prompts).',
   planValue: 'plan',
   planLabel: 'Plan',
+  planDescription: 'Plan carefully before executing a task.',
+  options: [
+    {
+      value: 'default',
+      label: 'Default',
+      detail: 'Ask before edits and commands, per your permission settings.',
+      icon: 'shield',
+    },
+    {
+      value: 'accept-edits',
+      label: 'Accept edits',
+      detail: 'Approve file edits in the workspace without asking.',
+      icon: 'pencil',
+    },
+    {
+      value: 'auto',
+      label: 'Auto',
+      detail: 'Approve edits and safe commands; ask before irreversible actions.',
+      icon: 'shield-check',
+    },
+    {
+      value: 'plan',
+      label: 'Plan',
+      detail: 'Plan carefully before executing a task.',
+      icon: 'route',
+      isPlan: true,
+    },
+    {
+      value: 'full_access',
+      label: 'Bypass permissions',
+      detail: 'Launch agy acp with --dangerously-skip-permissions (skips all permission prompts).',
+      icon: 'shield-off',
+      isBypass: true,
+    },
+  ],
 };
 
 function getAntigravityModelOptions(settings: Record<string, unknown>): ProviderUIOption[] {
@@ -156,11 +195,19 @@ export const antigravityChatUIConfig: ProviderChatUIConfig = {
     return ANTIGRAVITY_PERMISSION_MODE_TOGGLE;
   },
 
+  resolvePermissionMode(settings: Record<string, unknown>): string | null {
+    const selectedMode = getAntigravityProviderSettings(settings).selectedMode;
+    return normalizeAntigravityWorkMode(selectedMode) ?? null;
+  },
+
   applyPermissionMode(value: string, settings: unknown): void {
     if (!settings || typeof settings !== 'object' || Array.isArray(settings)) {
       return;
     }
-    (settings as Record<string, unknown>).permissionMode = value;
+    const normalized = normalizeAntigravityWorkMode(value) ?? 'default';
+    const settingsBag = settings as Record<string, unknown>;
+    settingsBag.permissionMode = normalized;
+    updateAntigravityProviderSettings(settingsBag, { selectedMode: normalized });
   },
 
   getProviderIcon() {

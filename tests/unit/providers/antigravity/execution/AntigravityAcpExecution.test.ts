@@ -101,6 +101,7 @@ describe('Antigravity ACP execution composition', () => {
         options: [
           { value: 'default', name: 'Default' },
           { value: 'accept-edits', name: 'Accept Edits' },
+          { value: 'auto', name: 'Auto' },
           ...(options.offersPlan === false ? [] : [{ value: 'plan', name: 'Plan' }]),
         ],
       }],
@@ -466,5 +467,16 @@ describe('Antigravity ACP execution composition', () => {
     expect(printStart).not.toHaveBeenCalled();
     expect(prompts).toHaveLength(rejectsLoad ? 0 : 1);
     expect(chunks.some(chunk => chunk.type === 'error')).toBe(rejectsLoad);
+  });
+
+  it.each(['accept-edits', 'auto'] as const)('passes %s mode through ACP without --dangerously-skip-permissions', async workMode => {
+    const { runtime, launches, modes, prompts } = await harness({ mode: workMode });
+
+    const chunks = await drain(runtime.query(runtime.prepareTurn({ text: `Run in ${workMode}.` })));
+
+    expect(launches[0]?.arguments).not.toContain('--dangerously-skip-permissions');
+    expect(modes).toEqual([workMode]);
+    expect(prompts).toHaveLength(1);
+    expect(chunks).toContainEqual({ type: 'text', content: 'The ACP answer.' });
   });
 });

@@ -76,19 +76,22 @@ describe('antigravityChatUIConfig', () => {
     ]);
   });
 
-  it('exposes Safe, Auto-approve and Plan, with the CLI default for reasoning', () => {
+  it('exposes all 5 Antigravity ACP work modes and syncs selectedMode', () => {
     const settings: Record<string, unknown> = {};
+    const toggle = antigravityChatUIConfig.getPermissionModeToggle?.();
 
-    expect(antigravityChatUIConfig.getPermissionModeToggle?.()).toEqual({
-      inactiveValue: 'normal',
-      inactiveLabel: 'Safe',
-      inactiveDescription: 'Review Antigravity permission requests in chat. Requires agy acp.',
-      activeValue: 'full_access',
-      activeLabel: 'Auto-approve',
-      activeDescription: 'Antigravity may edit files without Grimoire prompts',
-      planValue: 'plan',
-      planLabel: 'Plan',
-    });
+    expect(toggle?.inactiveValue).toBe('default');
+    expect(toggle?.inactiveLabel).toBe('Default');
+    expect(toggle?.activeValue).toBe('full_access');
+    expect(toggle?.activeLabel).toBe('Bypass permissions');
+    expect(toggle?.planValue).toBe('plan');
+    expect(toggle?.options?.map(option => option.value)).toEqual([
+      'default',
+      'accept-edits',
+      'auto',
+      'plan',
+      'full_access',
+    ]);
     // One entry, which is the picker not offering a choice. The tiers that were
     // here reached no argument and no prompt: `agy --print` takes no flag for a
     // thinking level and the composer ignores one, so choosing High changed a
@@ -97,7 +100,12 @@ describe('antigravityChatUIConfig', () => {
       { value: 'default', label: 'Default' },
     ]);
 
-    antigravityChatUIConfig.applyPermissionMode?.('full_access', settings);
-    expect(settings.permissionMode).toBe('full_access');
+    antigravityChatUIConfig.applyPermissionMode?.('accept-edits', settings);
+    expect(settings.permissionMode).toBe('accept-edits');
+    expect(antigravityChatUIConfig.resolvePermissionMode?.(settings)).toBe('accept-edits');
+
+    antigravityChatUIConfig.applyPermissionMode?.('normal', settings);
+    expect(settings.permissionMode).toBe('default');
+    expect(antigravityChatUIConfig.resolvePermissionMode?.(settings)).toBe('default');
   });
 });
