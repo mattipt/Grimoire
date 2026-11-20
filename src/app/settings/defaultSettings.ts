@@ -76,6 +76,7 @@ export const DEFAULT_GRIMOIRE_SETTINGS: GrimoireSettings = {
   tabBarPosition: 'header',
   showPanelLabels: false,
   enableAutoScroll: true,
+  enableStepFolding: true,
   deferMathRenderingDuringStreaming: true,
   chatViewPlacement: 'right-sidebar',
 

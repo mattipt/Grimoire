@@ -20,7 +20,7 @@ export function createThinkingBlock(
   parentEl: HTMLElement,
   renderContent: RenderContentFn
 ): ThinkingBlockState {
-  const wrapperEl = parentEl.createDiv({ cls: 'grimoire-thinking-block' });
+  const wrapperEl = parentEl.createDiv({ cls: 'grimoire-thinking-block is-running' });
 
   // Header (clickable to expand/collapse)
   const header = wrapperEl.createDiv({ cls: 'grimoire-thinking-header' });
@@ -106,6 +106,7 @@ function completedThinkingLabel(durationSeconds: number | undefined): string {
 }
 
 export function finalizeThinkingBlock(state: ThinkingBlockState): number {
+  state.wrapperEl.removeClass('is-running');
   // Stop the timer
   if (state.timerInterval) {
     window.clearInterval(state.timerInterval);
@@ -140,7 +141,7 @@ export function renderStoredThinkingBlock(
   durationSeconds: number | undefined,
   renderContent: RenderContentFn
 ): HTMLElement {
-  const wrapperEl = parentEl.createDiv({ cls: 'grimoire-thinking-block' });
+  const wrapperEl = parentEl.createDiv({ cls: 'grimoire-thinking-block is-running' });
 
   // Header (clickable to expand/collapse)
   const header = wrapperEl.createDiv({ cls: 'grimoire-thinking-header' });

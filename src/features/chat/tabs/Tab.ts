@@ -47,6 +47,7 @@ import { NavigationController } from '../controllers/NavigationController';
 import { SelectionController } from '../controllers/SelectionController';
 import { StreamController } from '../controllers/StreamController';
 import { MessageRenderer } from '../rendering/MessageRenderer';
+import { StepFoldController } from '../rendering/StepFoldController';
 import { cleanupThinkingBlock } from '../rendering/ThinkingBlockRenderer';
 import { findRewindContext } from '../rewind';
 import { SubagentManager } from '../services/SubagentManager';
@@ -280,6 +281,7 @@ export function createTab(options: TabCreateOptions): TabData {
       runtimeContextActivity: null,
       statusPanel: null,
       navigationSidebar: null,
+      stepFoldController: null,
       relevantNotesView: null,
     },
     dom,
@@ -1052,6 +1054,17 @@ export function initializeTabUI(
     resizeObserver.observe(dom.messagesEl);
     dom.eventCleanups.push(() => resizeObserver.disconnect());
   }
+
+  const stepFoldController = new StepFoldController(
+    dom.messagesEl,
+    dom.chatScrollEl,
+    plugin.settings?.enableStepFolding ?? true,
+  );
+  tab.ui.stepFoldController = stepFoldController;
+  dom.eventCleanups.push(() => {
+    stepFoldController.disconnect();
+    tab.ui.stepFoldController = null;
+  });
 }
 
 export interface ForkContext {

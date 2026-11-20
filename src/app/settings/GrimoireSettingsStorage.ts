@@ -146,6 +146,12 @@ function normalizeShowPanelLabels(value: unknown): boolean {
     : DEFAULT_GRIMOIRE_SETTINGS.showPanelLabels;
 }
 
+function normalizeEnableStepFolding(value: unknown): boolean {
+  return typeof value === 'boolean'
+    ? value
+    : (DEFAULT_GRIMOIRE_SETTINGS.enableStepFolding ?? true);
+}
+
 function shouldPersistChatViewPlacementMigration(
   stored: Record<string, unknown>,
   normalized: ChatViewPlacement,
@@ -445,6 +451,7 @@ export class GrimoireSettingsStorage {
     const maxTabs = normalizeMaxTabs(stored.maxTabs);
     const tabBarPosition = normalizeTabBarPosition(stored.tabBarPosition);
     const showPanelLabels = normalizeShowPanelLabels(stored.showPanelLabels);
+    const enableStepFolding = normalizeEnableStepFolding(stored.enableStepFolding);
     const usageIndicatorsEnabled = normalizeUsageIndicatorsEnabled(stored.usageIndicatorsEnabled);
     const debugLoggingEnabled = normalizeDebugLoggingEnabled(stored.debugLoggingEnabled);
     const runAbsoluteTimeoutMinutes = normalizeRunAbsoluteTimeoutMinutes(
@@ -471,6 +478,7 @@ export class GrimoireSettingsStorage {
       maxTabs,
       tabBarPosition,
       showPanelLabels,
+      enableStepFolding,
       usageIndicatorsEnabled,
       debugLoggingEnabled,
       runAbsoluteTimeoutMinutes,

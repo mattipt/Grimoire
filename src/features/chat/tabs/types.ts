@@ -18,6 +18,7 @@ import type { NavigationController } from '../controllers/NavigationController';
 import type { SelectionController } from '../controllers/SelectionController';
 import type { StreamController } from '../controllers/StreamController';
 import type { MessageRenderer } from '../rendering/MessageRenderer';
+import type { StepFoldController } from '../rendering/StepFoldController';
 import type { SubagentManager } from '../services/SubagentManager';
 import type { ChatState } from '../state/ChatState';
 import type { BangBashModeManager } from '../ui/BangBashModeManager';
@@ -145,6 +146,7 @@ export interface TabUIComponents {
   runtimeContextActivity: RuntimeContextActivityView | null;
   statusPanel: StatusPanel | null;
   navigationSidebar: NavigationSidebar | null;
+  stepFoldController: StepFoldController | null;
   relevantNotesView: RelevantNotesView | null;
 }
 

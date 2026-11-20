@@ -578,6 +578,14 @@ export class GrimoireView extends ItemView {
     }
   }
 
+  /** Re-reads `enableStepFolding` into every open tab's step fold controller. */
+  refreshStepFolding(): void {
+    const enabled = this.plugin.settings.enableStepFolding ?? true;
+    for (const tab of this.tabManager?.getAllTabs() ?? []) {
+      tab.ui.stepFoldController?.setEnabled(enabled);
+    }
+  }
+
   // ============================================
   // Tab Management
   // ============================================

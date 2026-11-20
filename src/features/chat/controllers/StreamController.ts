@@ -960,6 +960,7 @@ export class StreamController {
     this.hideThinkingIndicator();
 
     if (!state.currentTextEl) {
+      this.flushPendingTools();
       const classes = ['grimoire-text-block'];
       if (phase) classes.push(`grimoire-text-block--${phase.replace('_', '-')}`);
       state.currentTextEl = state.currentContentEl.createDiv({ cls: classes.join(' ') });
@@ -1277,6 +1278,7 @@ export class StreamController {
 
     this.hideThinkingIndicator();
     if (!state.currentThinkingState) {
+      this.flushPendingTools();
       state.currentThinkingState = createThinkingBlock(
         state.currentContentEl,
         (el, md) => renderer.renderContent(el, md)
