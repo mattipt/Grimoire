@@ -18,6 +18,7 @@ export interface AgyContinuationNoteTurnEndedInput {
 export interface AgyContinuationOptions {
   readonly pollIntervalMs?: number;
   readonly maxWakeupGraceMs?: number;
+  readonly liveWireDrainGraceMs?: number;
   readonly delayMs?: (ms: number) => Promise<void>;
   readonly nowMs?: () => number;
   readonly readFileUtf8?: (filePath: string) => string;
@@ -56,19 +57,34 @@ interface TranscriptCacheEntry {
   readonly steps: TranscriptStep[];
 }
 
+interface PendingSyntheticText {
+  remaining: string;
+  started: boolean;
+}
+
 interface SessionTurnState {
   lastSeenStepIndex: number;
   backgroundDetected: boolean;
   asyncToolIds: Set<string>;
   pendingBackgroundTaskIds: Set<string>;
+  wireTaskIdsByToolCallId: Map<string, Set<string>>;
   inFlightWireTools: Map<string, string>;
   seenWireToolIds: Set<string>;
   emittedKeys: Set<string>;
   transcriptCache?: TranscriptCacheEntry;
+  inContinuation: boolean;
+  sawLiveWireContinuation: boolean;
+  liveWireContinuationText: string;
+  pendingSyntheticMessages: PendingSyntheticText[];
+  pendingSyntheticThoughts: PendingSyntheticText[];
+  syntheticToolSuppressions: Map<string, number>;
+  suppressedWireToolIds: Set<string>;
+  onContinuationWireActivity?: () => void;
 }
 
 const DEFAULT_POLL_INTERVAL_MS = 500;
 const DEFAULT_MAX_WAKEUP_GRACE_MS = 600_000;
+const DEFAULT_LIVE_WIRE_DRAIN_GRACE_MS = 2_000;
 
 const ASYNC_TOOL_NAMES = new Set([
   'invoke_subagent',
@@ -77,11 +93,26 @@ const ASYNC_TOOL_NAMES = new Set([
   'swarm',
 ]);
 
+const NON_BACKGROUND_TOOL_NAMES = new Set([
+  'read_file',
+  'view_file',
+  'edit_file',
+  'write_file',
+  'write_to_file',
+  'replace_file_content',
+  'list_dir',
+  'list_directory',
+  'find_by_name',
+  'grep_search',
+  'search_web',
+  'read_url_content',
+  'exit_plan_mode',
+  'ask_question',
+]);
+
 const BACKGROUND_TEXT_MARKERS = [
   'running as a background task',
   'task logs are available at:',
-  'launches asynchronously',
-  'runs in the background',
 ];
 
 function containsBackgroundMarker(text: string): boolean {
@@ -89,11 +120,47 @@ function containsBackgroundMarker(text: string): boolean {
   return BACKGROUND_TEXT_MARKERS.some(marker => lower.includes(marker));
 }
 
+function normalizeToolName(name: string | undefined): string {
+  if (!name) return '';
+  let normalized = name.trim().toLowerCase();
+  if (normalized.startsWith('run ')) {
+    normalized = normalized.slice(4).trim();
+  }
+  if (normalized.startsWith('default_api:')) {
+    normalized = normalized.slice('default_api:'.length).trim();
+  }
+  return normalized;
+}
+
 function isAsyncToolName(name: string | undefined): boolean {
-  if (!name) return false;
-  const normalized = name.trim().toLowerCase();
-  return ASYNC_TOOL_NAMES.has(normalized)
-    || Array.from(ASYNC_TOOL_NAMES).some(candidate => normalized.includes(candidate));
+  const normalized = normalizeToolName(name);
+  return normalized.length > 0 && ASYNC_TOOL_NAMES.has(normalized);
+}
+
+function isNonBackgroundToolName(name: string | undefined): boolean {
+  const normalized = normalizeToolName(name);
+  return normalized.length > 0 && NON_BACKGROUND_TOOL_NAMES.has(normalized);
+}
+
+function isNonBackgroundWireToolTitle(title: string | undefined): boolean {
+  if (!title) return false;
+  const trimmed = title.trim();
+  const lower = trimmed.toLowerCase();
+  if (lower.startsWith('file ') || lower.startsWith('diff ')) {
+    return true;
+  }
+  return isNonBackgroundToolName(trimmed);
+}
+
+function looksLikeCompletedNonLaunchOutput(text: string): boolean {
+  if (!text) return false;
+  return (
+    text.includes('Command exited with code ')
+    || text.includes('\nCommand output:\n')
+    || /(?:^|\n)Showing lines \d+-\d+ of \d+/.test(text)
+    || /(?:^|\n)Partial read \(lines /.test(text)
+    || text.includes("The tool's output was truncated due to being too long.")
+  );
 }
 
 function resolveAppDataDir(env: NodeJS.ProcessEnv): string {
@@ -246,13 +313,76 @@ function highestStepIndex(steps: ReadonlyArray<TranscriptStep>): number {
   return maxIndex;
 }
 
+function normalizeComparableText(text: string): string {
+  return text.replace(/\s+/g, ' ').trim();
+}
+
+function normalizeToolKey(name: string | undefined): string {
+  return (name ?? 'tool').trim().toLowerCase();
+}
+
+function consumePendingSyntheticText(
+  queue: PendingSyntheticText[],
+  incoming: string,
+  stripTrailingOnComplete: boolean,
+): boolean {
+  if (queue.length === 0) {
+    return false;
+  }
+  const head = queue[0];
+  const candidate = head.started ? incoming : incoming.replace(/^\s+/, '');
+  if (!candidate) {
+    return true;
+  }
+  if (head.remaining.startsWith(candidate)) {
+    head.remaining = head.remaining.slice(candidate.length);
+    head.started = true;
+    if (head.remaining.trim().length === 0) {
+      queue.shift();
+    }
+    return true;
+  }
+  if (stripTrailingOnComplete) {
+    const trimmedEnd = candidate.replace(/\s+$/, '');
+    if (trimmedEnd.length > 0 && trimmedEnd === head.remaining) {
+      queue.shift();
+      return true;
+    }
+  }
+  if (candidate.trim().length > 0 && candidate.trim() === head.remaining.trim()) {
+    queue.shift();
+    return true;
+  }
+  return false;
+}
+
+function resetContinuationTracking(state: SessionTurnState): void {
+  state.inContinuation = false;
+  state.sawLiveWireContinuation = false;
+  state.liveWireContinuationText = '';
+  state.pendingSyntheticMessages = [];
+  state.pendingSyntheticThoughts = [];
+  state.syntheticToolSuppressions.clear();
+  state.suppressedWireToolIds.clear();
+  state.onContinuationWireActivity = undefined;
+}
+
+function beginContinuationTracking(
+  state: SessionTurnState,
+  onWireActivity: () => void,
+): void {
+  resetContinuationTracking(state);
+  state.inContinuation = true;
+  state.onContinuationWireActivity = onWireActivity;
+}
+
 function notificationDedupeKey(notification: AcpSessionNotification): string | null {
   const update = notification.update;
   switch (update.sessionUpdate) {
     case 'agent_thought_chunk':
-      return update.content.type === 'text' ? `thought:${update.content.text}` : null;
+      return update.content.type === 'text' ? `thought:${update.content.text.trim()}` : null;
     case 'agent_message_chunk':
-      return update.content.type === 'text' ? `message:${update.content.text}` : null;
+      return update.content.type === 'text' ? `message:${update.content.text.trim()}` : null;
     case 'tool_call':
       return `tool_call:${update.toolCallId}`;
     case 'tool_call_update':
@@ -282,13 +412,16 @@ function stepSpawnsAsyncWork(step: TranscriptStep): boolean {
       if (isAsyncToolName(call.name)) {
         return true;
       }
-      if (call.name === 'run_command' && inspectUnknownText(call.args).includes('WaitMsBeforeAsync')) {
-        // A run_command step only proves async background continuation if output or live stream says so
-        continue;
-      }
     }
   }
-  if (typeof step.content === 'string' && containsBackgroundMarker(step.content)) {
+  if (isUserTranscriptStep(step) || step.type === 'PLANNER_RESPONSE') {
+    return false;
+  }
+  if (
+    typeof step.content === 'string'
+    && !looksLikeCompletedNonLaunchOutput(step.content)
+    && containsBackgroundMarker(step.content)
+  ) {
     return true;
   }
   return false;
@@ -305,8 +438,15 @@ function extractRegexCaptures(text: string, pattern: RegExp): string[] {
   return matches;
 }
 
-function extractLaunchedBackgroundTaskIds(text: string): string[] {
-  return extractRegexCaptures(text, /running as a background task with task id:\s*([^\s"']+)/gi);
+function extractLaunchedBackgroundTaskIds(text: string, sessionId?: string): string[] {
+  const matches = extractRegexCaptures(text, /running as a background task with task id:\s*([^\s"'`<>]+)/gi);
+  if (!sessionId) {
+    return matches;
+  }
+  return matches.filter(taskId => {
+    const slashIdx = taskId.indexOf('/');
+    return slashIdx < 0 || taskId.slice(0, slashIdx) === sessionId;
+  });
 }
 
 function extractCompletedBackgroundTaskIds(text: string): string[] {
@@ -326,6 +466,37 @@ function isSystemTranscriptStep(step: TranscriptStep): boolean {
     || step.type === 'SYSTEM_MESSAGE'
     || step.type === 'TASK_NOTIFICATION'
   );
+}
+
+function isUserTranscriptStep(step: TranscriptStep): boolean {
+  return step.type === 'USER_INPUT' || step.source === 'USER_EXPLICIT';
+}
+
+interface ToolResultBackgroundScan {
+  readonly launchedIds: string[];
+  readonly hasAnonymousBackgroundSignal: boolean;
+}
+
+function scanToolResultStepForBackground(
+  step: TranscriptStep,
+  originToolName: string | undefined,
+  sessionId: string,
+): ToolResultBackgroundScan {
+  const content = typeof step.content === 'string' ? step.content : '';
+  const canSpawnBackground =
+    !isNonBackgroundToolName(originToolName)
+    && !looksLikeCompletedNonLaunchOutput(content);
+  if (!canSpawnBackground) {
+    return {
+      launchedIds: [],
+      hasAnonymousBackgroundSignal: step.status === 'RUNNING',
+    };
+  }
+  const launchedIds = extractLaunchedBackgroundTaskIds(content, sessionId);
+  const hasAnonymousBackgroundSignal =
+    launchedIds.length === 0
+    && (step.status === 'RUNNING' || containsBackgroundMarker(content));
+  return { launchedIds, hasAnonymousBackgroundSignal };
 }
 
 function unwrapTranscriptArgValue(value: unknown): unknown {
@@ -406,6 +577,7 @@ export function createAgyContinuationController(
 ): AgyContinuationController {
   const pollIntervalMs = options.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
   const maxWakeupGraceMs = options.maxWakeupGraceMs ?? DEFAULT_MAX_WAKEUP_GRACE_MS;
+  const liveWireDrainGraceMs = options.liveWireDrainGraceMs ?? DEFAULT_LIVE_WIRE_DRAIN_GRACE_MS;
   const delayMs = options.delayMs ?? (ms => delayThroughWindow(ms));
   const nowMs = options.nowMs ?? (() => Date.now());
   const readFileUtf8 = options.readFileUtf8 ?? (filePath => readFileSync(filePath, 'utf8'));
@@ -419,9 +591,17 @@ export function createAgyContinuationController(
         backgroundDetected: false,
         asyncToolIds: new Set(),
         pendingBackgroundTaskIds: new Set(),
+        wireTaskIdsByToolCallId: new Map(),
         inFlightWireTools: new Map(),
         seenWireToolIds: new Set(),
         emittedKeys: new Set(),
+        inContinuation: false,
+        sawLiveWireContinuation: false,
+        liveWireContinuationText: '',
+        pendingSyntheticMessages: [],
+        pendingSyntheticThoughts: [],
+        syntheticToolSuppressions: new Map(),
+        suppressedWireToolIds: new Set(),
       };
       sessions.set(sessionId, state);
     }
@@ -437,6 +617,24 @@ export function createAgyContinuationController(
     if (key) {
       state.emittedKeys.add(key);
     }
+    const update = notification.update;
+    if (update.sessionUpdate === 'agent_message_chunk' && update.content.type === 'text') {
+      const trimmed = update.content.text.trim();
+      if (trimmed) {
+        state.pendingSyntheticMessages.push({ remaining: trimmed, started: false });
+      }
+    } else if (update.sessionUpdate === 'agent_thought_chunk' && update.content.type === 'text') {
+      const trimmed = update.content.text.trim();
+      if (trimmed) {
+        state.pendingSyntheticThoughts.push({ remaining: trimmed, started: false });
+      }
+    } else if (update.sessionUpdate === 'tool_call') {
+      const toolKey = normalizeToolKey(update.title);
+      state.syntheticToolSuppressions.set(
+        toolKey,
+        (state.syntheticToolSuppressions.get(toolKey) ?? 0) + 1,
+      );
+    }
     input.presentNotification?.(notification);
   };
 
@@ -444,11 +642,16 @@ export function createAgyContinuationController(
     sessionId: string,
     state: SessionTurnState,
     input: AgyContinuationNoteTurnEndedInput,
+    onlyToolIds?: ReadonlySet<string>,
   ): void => {
     if (state.inFlightWireTools.size === 0) {
       return;
     }
-    for (const [toolCallId, title] of state.inFlightWireTools) {
+    const targets = onlyToolIds
+      ? Array.from(state.inFlightWireTools.entries()).filter(([toolCallId]) => onlyToolIds.has(toolCallId))
+      : Array.from(state.inFlightWireTools.entries());
+    for (const [toolCallId, title] of targets) {
+      state.inFlightWireTools.delete(toolCallId);
       emitSynthetic(state, input, {
         sessionId,
         update: {
@@ -459,7 +662,6 @@ export function createAgyContinuationController(
         },
       });
     }
-    state.inFlightWireTools.clear();
   };
 
   return {
@@ -476,9 +678,11 @@ export function createAgyContinuationController(
       state.backgroundDetected = false;
       state.asyncToolIds.clear();
       state.pendingBackgroundTaskIds.clear();
+      state.wireTaskIdsByToolCallId.clear();
       state.inFlightWireTools.clear();
       state.seenWireToolIds.clear();
       state.emittedKeys.clear();
+      resetContinuationTracking(state);
       state.transcriptCache = undefined;
     },
 
@@ -495,21 +699,90 @@ export function createAgyContinuationController(
       state.backgroundDetected = false;
       state.asyncToolIds.clear();
       state.pendingBackgroundTaskIds.clear();
+      state.wireTaskIdsByToolCallId.clear();
       state.inFlightWireTools.clear();
       state.seenWireToolIds.clear();
+      state.emittedKeys.clear();
+      resetContinuationTracking(state);
     },
 
     filterNotification(notification: AcpSessionNotification): boolean {
       const state = getOrCreateState(notification.sessionId);
+      const update = notification.update;
+      const isWireActivityUpdate =
+        update.sessionUpdate === 'agent_message_chunk'
+        || update.sessionUpdate === 'agent_thought_chunk'
+        || update.sessionUpdate === 'tool_call'
+        || update.sessionUpdate === 'tool_call_update';
+
+      if (state.inContinuation && isWireActivityUpdate) {
+        state.sawLiveWireContinuation = true;
+        state.onContinuationWireActivity?.();
+      }
+
       const key = notificationDedupeKey(notification);
-      if (key && state.emittedKeys.has(key)) {
+
+      if (update.sessionUpdate === 'tool_call') {
+        if (key && state.emittedKeys.has(key)) {
+          state.emittedKeys.delete(key);
+          return false;
+        }
+        const toolKey = normalizeToolKey(update.title);
+        const pendingCount = state.syntheticToolSuppressions.get(toolKey) ?? 0;
+        if (pendingCount > 0) {
+          if (pendingCount === 1) {
+            state.syntheticToolSuppressions.delete(toolKey);
+          } else {
+            state.syntheticToolSuppressions.set(toolKey, pendingCount - 1);
+          }
+          state.suppressedWireToolIds.add(update.toolCallId);
+          state.seenWireToolIds.add(update.toolCallId);
+          return false;
+        }
+      } else if (update.sessionUpdate === 'tool_call_update') {
+        if (state.suppressedWireToolIds.has(update.toolCallId)) {
+          if (update.status === 'completed' || update.status === 'failed') {
+            state.suppressedWireToolIds.delete(update.toolCallId);
+          }
+          return false;
+        }
+        if (key && state.emittedKeys.has(key)) {
+          state.emittedKeys.delete(key);
+          return false;
+        }
+      } else if (update.sessionUpdate === 'agent_thought_chunk' && update.content.type === 'text') {
+        if (consumePendingSyntheticText(state.pendingSyntheticThoughts, update.content.text, true)) {
+          if (key) {
+            state.emittedKeys.delete(key);
+          }
+          return false;
+        }
+        if (key && state.emittedKeys.has(key)) {
+          state.emittedKeys.delete(key);
+          return false;
+        }
+      } else if (update.sessionUpdate === 'agent_message_chunk' && update.content.type === 'text') {
+        if (consumePendingSyntheticText(state.pendingSyntheticMessages, update.content.text, true)) {
+          if (key) {
+            state.emittedKeys.delete(key);
+          }
+          return false;
+        }
+        if (key && state.emittedKeys.has(key)) {
+          state.emittedKeys.delete(key);
+          return false;
+        }
+        if (state.inContinuation) {
+          state.liveWireContinuationText += update.content.text;
+        }
+      } else if (key && state.emittedKeys.has(key)) {
         state.emittedKeys.delete(key);
         return false;
       }
 
-      const update = notification.update;
       if (update.sessionUpdate === 'tool_call' || update.sessionUpdate === 'tool_call_update') {
         state.seenWireToolIds.add(update.toolCallId);
+        const effectiveTitle = update.title ?? state.inFlightWireTools.get(update.toolCallId);
         const title = update.title ?? 'tool';
         if (update.sessionUpdate === 'tool_call') {
           if (update.status === 'completed' || update.status === 'failed') {
@@ -523,29 +796,44 @@ export function createAgyContinuationController(
           state.inFlightWireTools.set(update.toolCallId, title);
         }
 
-        const textBlob = [
-          update.title ?? '',
-          inspectUnknownText(update.rawInput),
+        const resultBlob = [
           inspectUnknownText(update.rawOutput),
           update.content ? inspectUnknownText(update.content) : '',
         ].join('\n');
-        const launchedIds = extractLaunchedBackgroundTaskIds(textBlob);
-        for (const launchedId of launchedIds) {
-          state.pendingBackgroundTaskIds.add(launchedId);
+        if (
+          (update.status === 'completed' || update.status === 'failed')
+          && looksLikeCompletedNonLaunchOutput(resultBlob)
+        ) {
+          const trackedIds = state.wireTaskIdsByToolCallId.get(update.toolCallId);
+          if (trackedIds) {
+            for (const trackedId of trackedIds) {
+              state.pendingBackgroundTaskIds.delete(trackedId);
+            }
+            state.wireTaskIdsByToolCallId.delete(update.toolCallId);
+          }
+        }
+        if (isAsyncToolName(effectiveTitle)) {
           state.backgroundDetected = true;
           state.asyncToolIds.add(update.toolCallId);
-        }
-        if (isAsyncToolName(update.title ?? '') || containsBackgroundMarker(textBlob)) {
-          state.backgroundDetected = true;
-          state.asyncToolIds.add(update.toolCallId);
-        }
-      } else if (update.sessionUpdate === 'agent_message_chunk' && update.content.type === 'text') {
-        for (const launchedId of extractLaunchedBackgroundTaskIds(update.content.text)) {
-          state.pendingBackgroundTaskIds.add(launchedId);
-          state.backgroundDetected = true;
-        }
-        if (containsBackgroundMarker(update.content.text)) {
-          state.backgroundDetected = true;
+        } else if (
+          !isNonBackgroundWireToolTitle(effectiveTitle)
+          && !looksLikeCompletedNonLaunchOutput(resultBlob)
+        ) {
+          const launchedIds = extractLaunchedBackgroundTaskIds(resultBlob, notification.sessionId);
+          if (launchedIds.length > 0) {
+            let tracked = state.wireTaskIdsByToolCallId.get(update.toolCallId);
+            if (!tracked) {
+              tracked = new Set();
+              state.wireTaskIdsByToolCallId.set(update.toolCallId, tracked);
+            }
+            for (const launchedId of launchedIds) {
+              state.pendingBackgroundTaskIds.add(launchedId);
+              tracked.add(launchedId);
+            }
+          } else if (containsBackgroundMarker(resultBlob)) {
+            state.backgroundDetected = true;
+            state.asyncToolIds.add(update.toolCallId);
+          }
         }
       }
 
@@ -568,33 +856,78 @@ export function createAgyContinuationController(
         .filter(step => typeof step.step_index === 'number' && step.step_index > state.lastSeenStepIndex)
         .sort((a, b) => (a.step_index ?? 0) - (b.step_index ?? 0));
 
-      let pendingInTranscript = false;
+      let pendingToolNames: string[] = [];
+      let pendingAnonymousAsyncCount = 0;
+      let hasUnresolvedRunningStep = false;
+      let sawSystemCompletion = false;
+      let lastStepWasSettledPlannerResponse = false;
+
       for (const step of initialUnseen) {
-        const isSystem = isSystemTranscriptStep(step);
-        if (typeof step.content === 'string') {
-          if (isSystem) {
-            for (const completedId of extractCompletedBackgroundTaskIds(step.content)) {
-              state.pendingBackgroundTaskIds.delete(completedId);
-            }
-            if (isAllBackgroundTasksStoppedNotice(step.content)) {
-              state.pendingBackgroundTaskIds.clear();
-            }
-          } else {
-            for (const launchedId of extractLaunchedBackgroundTaskIds(step.content)) {
-              state.pendingBackgroundTaskIds.add(launchedId);
-            }
+        if (isSystemTranscriptStep(step)) {
+          sawSystemCompletion = true;
+          hasUnresolvedRunningStep = false;
+          lastStepWasSettledPlannerResponse = false;
+          pendingToolNames = [];
+          const stepContent = typeof step.content === 'string' ? step.content : '';
+          const completedIds = extractCompletedBackgroundTaskIds(stepContent);
+          for (const completedId of completedIds) {
+            state.pendingBackgroundTaskIds.delete(completedId);
           }
+          if (isAllBackgroundTasksStoppedNotice(stepContent)) {
+            state.pendingBackgroundTaskIds.clear();
+            pendingAnonymousAsyncCount = 0;
+          } else if (completedIds.length === 0 && pendingAnonymousAsyncCount > 0) {
+            pendingAnonymousAsyncCount -= 1;
+          }
+          continue;
         }
-        if (!isSystem && (step.status === 'RUNNING' || stepSpawnsAsyncWork(step))) {
-          pendingInTranscript = true;
+        if (isUserTranscriptStep(step)) {
+          lastStepWasSettledPlannerResponse = false;
+          pendingToolNames = [];
+          continue;
+        }
+        if (step.type === 'PLANNER_RESPONSE') {
+          pendingToolNames = (step.tool_calls ?? []).map(call => (call.name ?? '').trim().toLowerCase());
+          const asyncCalls = (step.tool_calls ?? []).filter(call => isAsyncToolName(call.name)).length;
+          if (asyncCalls > 0) {
+            pendingAnonymousAsyncCount += asyncCalls;
+            lastStepWasSettledPlannerResponse = false;
+          } else if ((step.tool_calls?.length ?? 0) === 0 && (step.status === 'DONE' || step.status === 'ERROR')) {
+            lastStepWasSettledPlannerResponse = true;
+          } else {
+            lastStepWasSettledPlannerResponse = false;
+          }
+          continue;
+        }
+        lastStepWasSettledPlannerResponse = false;
+        const originToolName = pendingToolNames.shift();
+        const scan = scanToolResultStepForBackground(step, originToolName, sessionId);
+        for (const launchedId of scan.launchedIds) {
+          state.pendingBackgroundTaskIds.add(launchedId);
+        }
+        if (scan.hasAnonymousBackgroundSignal) {
+          hasUnresolvedRunningStep = true;
         }
       }
 
+      if (
+        sawSystemCompletion
+        && lastStepWasSettledPlannerResponse
+        && state.pendingBackgroundTaskIds.size === 0
+        && pendingAnonymousAsyncCount === 0
+        && !hasUnresolvedRunningStep
+      ) {
+        state.backgroundDetected = false;
+        state.asyncToolIds.clear();
+      }
+
+      const pendingInTranscript = pendingAnonymousAsyncCount > 0 || hasUnresolvedRunningStep;
+      const outputFallback = initialUnseen.length === 0 && containsBackgroundMarker(output);
       const hasBackgroundWork =
         state.backgroundDetected
         || state.asyncToolIds.size > 0
         || state.pendingBackgroundTaskIds.size > 0
-        || containsBackgroundMarker(output)
+        || outputFallback
         || pendingInTranscript;
 
       if (!hasBackgroundWork) {
@@ -604,10 +937,19 @@ export function createAgyContinuationController(
 
       // Track where the triggering turn ended so we wait for a subsequent wakeup step.
       const triggerTurnMaxIndex = Math.max(state.lastSeenStepIndex, highestStepIndex(initialSteps));
+      const foregroundInFlightToolIds = new Set(state.inFlightWireTools.keys());
       let lastActivityAt = nowMs();
       let cycleSpawnedAsyncWork = state.pendingBackgroundTaskIds.size > 0;
       let lastTaskLogsSignature = '';
       let settledWireTools = false;
+      let pendingCompletionContent: string | null = null;
+      let completionSeenAt: number | null = null;
+      let wakeupPendingToolNames: string[] = [];
+
+      beginContinuationTracking(state, () => {
+        lastActivityAt = nowMs();
+        input.noteActivity?.();
+      });
 
       try {
         while (!input.isCancelled?.()) {
@@ -649,7 +991,7 @@ export function createAgyContinuationController(
 
             if (!settledWireTools) {
               settledWireTools = true;
-              settleInFlightWireTools(sessionId, state, input);
+              settleInFlightWireTools(sessionId, state, input, foregroundInFlightToolIds);
             }
 
             input.noteActivity?.();
@@ -657,6 +999,7 @@ export function createAgyContinuationController(
 
             const isSystem = isSystemTranscriptStep(step);
             if (isSystem) {
+              wakeupPendingToolNames = [];
               cycleSpawnedAsyncWork = false;
               if (typeof step.content === 'string') {
                 for (const completedId of extractCompletedBackgroundTaskIds(step.content)) {
@@ -667,69 +1010,73 @@ export function createAgyContinuationController(
                 }
               }
               sawWakeupCompletion = false;
+              pendingCompletionContent = null;
+              completionSeenAt = null;
+              continue;
             }
 
-            if (!isSystem && typeof step.content === 'string') {
-              const launchedIds = extractLaunchedBackgroundTaskIds(step.content);
-              if (launchedIds.length > 0) {
-                for (const launchedId of launchedIds) {
-                  state.pendingBackgroundTaskIds.add(launchedId);
-                }
-                cycleSpawnedAsyncWork = true;
-              }
-            }
-
-            if (!isSystem && (step.status === 'RUNNING' || stepSpawnsAsyncWork(step))) {
-              cycleSpawnedAsyncWork = true;
-              sawWakeupCompletion = false;
+            if (isUserTranscriptStep(step)) {
+              wakeupPendingToolNames = [];
+              continue;
             }
 
             if (step.type === 'PLANNER_RESPONSE') {
-              const thinking = step.thinking?.trim();
-              if (thinking) {
-                emitSynthetic(state, input, {
-                  sessionId,
-                  update: {
-                    sessionUpdate: 'agent_thought_chunk',
-                    content: { type: 'text', text: thinking },
-                  },
-                });
+              wakeupPendingToolNames = (step.tool_calls ?? []).map(call => (call.name ?? '').trim().toLowerCase());
+              if (step.status === 'RUNNING' || stepSpawnsAsyncWork(step)) {
+                cycleSpawnedAsyncWork = true;
+                sawWakeupCompletion = false;
+                pendingCompletionContent = null;
+                completionSeenAt = null;
               }
+              const suppressSynthetic = state.sawLiveWireContinuation;
 
-              if (step.tool_calls) {
-                step.tool_calls.forEach((call, callIndex) => {
-                  const callId = call.call_id || call.id || `${stepIndex}:${callIndex}:${call.name ?? 'tool'}`;
-                  if (state.seenWireToolIds.has(callId)) {
-                    return;
-                  }
-                  const title = call.name ?? 'tool';
-                  const normalizedArgs = normalizeTranscriptToolArgs(call.args);
+              if (!suppressSynthetic) {
+                const thinking = step.thinking?.trim();
+                if (thinking) {
                   emitSynthetic(state, input, {
                     sessionId,
                     update: {
-                      sessionUpdate: 'tool_call',
-                      toolCallId: callId,
-                      title,
-                      status: 'pending',
-                      rawInput: normalizedArgs,
+                      sessionUpdate: 'agent_thought_chunk',
+                      content: { type: 'text', text: thinking },
                     },
                   });
-                  const status: AcpToolCallStatus = step.status === 'ERROR' ? 'failed' : 'completed';
-                  emitSynthetic(state, input, {
-                    sessionId,
-                    update: {
-                      sessionUpdate: 'tool_call_update',
-                      toolCallId: callId,
-                      title,
-                      status,
-                      rawInput: normalizedArgs,
-                    },
+                }
+
+                if (step.tool_calls) {
+                  step.tool_calls.forEach((call, callIndex) => {
+                    const callId = call.call_id || call.id || `${stepIndex}:${callIndex}:${call.name ?? 'tool'}`;
+                    if (state.seenWireToolIds.has(callId)) {
+                      return;
+                    }
+                    const title = call.name ?? 'tool';
+                    const normalizedArgs = normalizeTranscriptToolArgs(call.args);
+                    emitSynthetic(state, input, {
+                      sessionId,
+                      update: {
+                        sessionUpdate: 'tool_call',
+                        toolCallId: callId,
+                        title,
+                        status: 'pending',
+                        rawInput: normalizedArgs,
+                      },
+                    });
+                    const status: AcpToolCallStatus = step.status === 'ERROR' ? 'failed' : 'completed';
+                    emitSynthetic(state, input, {
+                      sessionId,
+                      update: {
+                        sessionUpdate: 'tool_call_update',
+                        toolCallId: callId,
+                        title,
+                        status,
+                        rawInput: normalizedArgs,
+                      },
+                    });
                   });
-                });
+                }
               }
 
               const content = step.content?.trim();
-              if (content) {
+              if (content && !suppressSynthetic) {
                 emitSynthetic(state, input, {
                   sessionId,
                   update: {
@@ -747,19 +1094,55 @@ export function createAgyContinuationController(
                 || state.pendingBackgroundTaskIds.size > 0
               ) {
                 sawWakeupCompletion = false;
+                pendingCompletionContent = null;
+                completionSeenAt = null;
               } else if (step.status === 'DONE' || step.status === 'ERROR') {
                 sawWakeupCompletion = true;
+                pendingCompletionContent = content ?? '';
+                completionSeenAt ??= nowMs();
               }
-            } else if (!isSystem) {
-              if (typeof step.content === 'string' && containsBackgroundMarker(step.content)) {
-                cycleSpawnedAsyncWork = true;
-                sawWakeupCompletion = false;
+              continue;
+            }
+
+            const originToolName = wakeupPendingToolNames.shift();
+            const scan = scanToolResultStepForBackground(step, originToolName, sessionId);
+            if (scan.launchedIds.length > 0) {
+              for (const launchedId of scan.launchedIds) {
+                state.pendingBackgroundTaskIds.add(launchedId);
               }
+              cycleSpawnedAsyncWork = true;
+              sawWakeupCompletion = false;
+              pendingCompletionContent = null;
+              completionSeenAt = null;
+            } else if (scan.hasAnonymousBackgroundSignal) {
+              cycleSpawnedAsyncWork = true;
+              sawWakeupCompletion = false;
+              pendingCompletionContent = null;
+              completionSeenAt = null;
             }
           }
 
-          if (sawWakeupCompletion) {
-            return;
+          if (sawWakeupCompletion || completionSeenAt !== null) {
+            if (!state.sawLiveWireContinuation) {
+              return;
+            }
+            const expected = normalizeComparableText(pendingCompletionContent ?? '');
+            const observed = normalizeComparableText(state.liveWireContinuationText);
+            if (!expected || observed.includes(expected)) {
+              return;
+            }
+            if (nowMs() - (completionSeenAt ?? nowMs()) >= liveWireDrainGraceMs) {
+              if (state.liveWireContinuationText.trim().length === 0 && pendingCompletionContent) {
+                emitSynthetic(state, input, {
+                  sessionId,
+                  update: {
+                    sessionUpdate: 'agent_message_chunk',
+                    content: { type: 'text', text: pendingCompletionContent },
+                  },
+                });
+              }
+              return;
+            }
           }
           if (nowMs() - lastActivityAt >= maxWakeupGraceMs) {
             return;
@@ -767,6 +1150,8 @@ export function createAgyContinuationController(
           await delayMs(pollIntervalMs);
         }
       } finally {
+        state.inContinuation = false;
+        state.onContinuationWireActivity = undefined;
         settleInFlightWireTools(sessionId, state, input);
       }
     },

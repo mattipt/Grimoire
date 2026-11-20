@@ -3,7 +3,11 @@ import { createHash, randomUUID } from 'node:crypto';
 import { NodeManagedAcpProcessLauncher } from '@/app/execution/acp/NodeManagedAcpProcessLauncher';
 import { delayThroughWindow } from '@/app/execution/hostTimers';
 import { ProviderWorkspaceHolder } from '@/app/execution/ProviderWorkspaceHolder';
-import type { RunTerminalReason } from '@/core/execution/ExecutionContracts';
+import type {
+  RunRecoveryEvidence,
+  RunRecoveryQuery,
+  RunTerminalReason,
+} from '@/core/execution/ExecutionContracts';
 import { executionSessionId, interactionId, runId, sessionInstanceId } from '@/core/execution/ExecutionIds';
 import type { BackendLifecycleRegistration, ExecutionLifecycleRegistry } from '@/core/execution/ExecutionLifecycleRegistry';
 import type { ProviderRuntimePorts, ProviderWorkspaceSlots } from '@/core/providers/ProviderModule';
@@ -84,6 +88,16 @@ import { createAgyContinuationController } from './AntigravityContinuationContro
  */
 export const ANTIGRAVITY_OUTPUT_BYTE_LIMIT = 16 * 1024 * 1024;
 const OUTPUT_BYTE_LIMIT = ANTIGRAVITY_OUTPUT_BYTE_LIMIT;
+
+/** Reconciles an Antigravity ACP cancellation, treating post-`end_turn` stops as safe. */
+export function reconcileAntigravityAcpRun(query: RunRecoveryQuery): RunRecoveryEvidence {
+  const direct = acpCancellationEvidence(query);
+  if (direct) return direct;
+  if (query.cancellationRequested && query.nativeStopReason === 'end_turn') {
+    return { kind: 'stopped-safe' };
+  }
+  return { kind: 'unknown', effectsPossible: true };
+}
 
 /**
  * Antigravity chat execution, assembled from the running plugin.
@@ -311,8 +325,7 @@ export class AntigravityExecution {
         },
         noteTurnEnded: input => this.continuation.noteTurnEnded(input),
       },
-      reconciler: { reconcile: async query => acpCancellationEvidence(query)
-        ?? { kind: 'unknown', effectsPossible: true } },
+      reconciler: { reconcile: async query => reconcileAntigravityAcpRun(query) },
       auxiliaryQueries: { execute: async () => { throw new Error('Antigravity auxiliary execution is unsupported.'); } },
       scheduler: {
         setTimeout: (callback, delayMs) => window.setTimeout(callback, delayMs),
