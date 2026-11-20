@@ -601,6 +601,8 @@ class ManagedAcpExecutionSession implements ExecutionSession {
   private restartFingerprint?: string;
   private loadedSessionRef?: string;
   private nativeSessionRef?: string;
+  private loadingSessionId?: string;
+  private suppressingRecoveryNotifications = false;
   private disposed = false;
   private disposeTask?: Promise<void>;
   private deliverySequence = 0;
@@ -799,6 +801,7 @@ class ManagedAcpExecutionSession implements ExecutionSession {
       return;
     }
     if (!run.sawObservableActivity && attempt === 1) {
+      this.suppressingRecoveryNotifications = true;
       try {
         const termination = await this.closeClient();
         if (termination === 'unconfirmed') {
@@ -824,10 +827,13 @@ class ManagedAcpExecutionSession implements ExecutionSession {
           ...(reopened?.modes ? { sessionModes: reopened.modes } : {}),
         });
         run.releaseRecovery();
+        this.suppressingRecoveryNotifications = false;
         this.dispatch(run, invocation);
         return;
       } catch {
         // Authoritative reconciliation below owns the terminal classification.
+      } finally {
+        this.suppressingRecoveryNotifications = false;
       }
     }
     await this.closeClient();
@@ -977,6 +983,7 @@ class ManagedAcpExecutionSession implements ExecutionSession {
     if (!client) throw new ExecutionDispatchError('Managed ACP client is unavailable.', true);
     if (this.nativeSessionRef && this.loadedSessionRef !== this.nativeSessionRef) {
       const target = this.nativeSessionRef;
+      this.loadingSessionId = target;
       try {
         const response = await client.loadSession({
           cwd: invocation.cwd,
@@ -1024,6 +1031,10 @@ class ManagedAcpExecutionSession implements ExecutionSession {
         this.nativeSessionRef = undefined;
         this.loadedSessionRef = undefined;
         onResume?.('replaced');
+      } finally {
+        if (this.loadingSessionId === target) {
+          this.loadingSessionId = undefined;
+        }
       }
     }
     if (!this.nativeSessionRef) {
@@ -1043,6 +1054,9 @@ class ManagedAcpExecutionSession implements ExecutionSession {
   }
 
   private handleNotification(notification: AcpSessionNotification): void {
+    if (this.suppressingRecoveryNotifications || notification.sessionId === this.loadingSessionId) {
+      return;
+    }
     if (notification.sessionId !== this.nativeSessionRef) return;
     this.activeRun?.handleNotification(notification);
   }
